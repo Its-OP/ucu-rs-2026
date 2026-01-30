@@ -2,7 +2,7 @@
 
 ## 1. Objective
 
-Define a reusable offline evaluation methodology for comparing recommendation models on the MovieLens 1M dataset. This document specifies the data splitting protocol, the evaluation paradigm, the metric suite, and an honest discussion of what this setup can and cannot measure. Every design choice is grounded in the data pathologies identified during EDA (see [`description.md`](./description.md)).
+Define a reusable offline evaluation methodology for comparing recommendation models on the MovieLens 1M dataset. This document specifies the data splitting protocol, the evaluation paradigm, the metric suite, and an honest discussion of what this setup can and cannot measure. Every design choice is grounded in the data pathologies identified during EDA (see [`description.md`](../eda/description.md)).
 
 ---
 
@@ -34,7 +34,7 @@ Classification (like/dislike) was considered but rejected: binarizing a 1–5 sc
 
 ### 3.1 Why Not Random Split
 
-Random splitting violates the temporal structure of the data. The EDA shows that rating volume, new-user arrival, and new-movie emergence all vary across the 35-month collection window. A random split would allow a model to train on a rating from February 2003 and predict one from April 2000 — an information leak that inflates offline metrics and misrepresents deployment performance, where the model must predict future behavior from past data.
+Random splitting violates the temporal structure of the data. A random split would allow a model to train on a rating from February 2003 and predict one from April 2000 — an information leak that inflates offline metrics and misrepresents deployment performance, where the model must predict future behavior from past data.
 
 ### 3.2 Split Mechanics
 
@@ -103,7 +103,7 @@ NDCG@K = DCG@K / IDCG@K
 
 The final NDCG@K is averaged across all users in the evaluation set.
 
-**Why graded relevance.** Unlike binary relevance, graded NDCG distinguishes between ranking a 5-star item at position 1 versus a 3-star item at position 1. The ideal ranking places the user's highest-rated items first, then progressively lower-rated ones. This preserves the full ordinal information in the 1–5 scale rather than collapsing it into a like/dislike binary. In a dataset where the selection bias compresses most ratings into the 3–5 range (EDA: mean = 3.58), this granularity matters — a model that consistently surfaces 5-star items over 4-star items is meaningfully better than one that treats them identically.
+**Why graded relevance.** Unlike binary relevance, graded NDCG distinguishes between ranking a 5-star item at position 1 versus a 4.5-star item at position 1. The ideal ranking places the user's highest-rated items first, then progressively lower-rated ones. This preserves the full ordinal information in the 1–5 scale rather than collapsing it into a like/dislike binary. In a dataset where the selection bias compresses most ratings into the 3–5 range (EDA: mean = 3.58), this granularity matters — a model that consistently surfaces 5-star items over 4-star items is meaningfully better than one that treats them identically.
 
 **Why primary.** NDCG is position-sensitive: placing a high-relevance item at rank 1 contributes far more than placing it at rank 10. This directly models user behavior — users inspect the top of the list first and attention decays rapidly. Among ranking metrics, NDCG is the most informative single number because it rewards both the *presence* and the *ordering* of relevant items.
 
@@ -173,22 +173,16 @@ These breakdowns are not separate metrics — they are the same NDCG@K / Precisi
 
 ## 7. What This Evaluation Setup Fails to Capture
 
-1. **True negative preferences.** We only observe ratings the user chose to give (MNAR). The test set is biased toward items the user selected — we cannot know how the user would rate a random item they never encountered. This means all our metrics are computed on a non-representative slice of the full preference space. Unbiased evaluation would require randomized exposure (e.g., serving random recommendations and collecting feedback), which is impossible offline.
+1. **True negative preferences.** We only observe ratings the user chose to give. The test set is biased toward items the user selected — we cannot know how the user would rate a random item they never encountered. This means all our metrics are computed on a non-representative slice of the full preference space. Unbiased evaluation would require randomized exposure (e.g., serving random recommendations and collecting feedback), which is impossible offline.
 
 2. **Beyond-accuracy qualities.** Our metrics measure relevance of individual items but not:
    - **Diversity**: does the top-K list cover multiple genres/moods, or is it monotonous?
    - **Novelty**: does the model surface surprising items, or only well-known ones?
-   - **Serendipity**: does the model introduce the user to items outside their comfort zone?
    - **Catalog coverage**: what fraction of the 3,883 movies ever gets recommended to anyone?
-   These are critical for user satisfaction in practice but orthogonal to the ranking metrics we measure.
 
-3. **User satisfaction and engagement.** Offline ranking metrics are a proxy. A user might prefer a list with slightly lower NDCG that feels more varied over a technically optimal but repetitive list. Online A/B testing is the only ground truth for user satisfaction.
+3. **Position bias in ground truth.** MovieLens ratings are explicit (users actively chose to rate), so position bias (users only clicking top results) is less of a concern here than in implicit-feedback datasets. However, the selection bias discussed in the EDA still applies: users only rate what they chose to watch.
 
-4. **Feedback loop effects.** In deployment, recommendations influence what users watch, which influences future training data. Our offline evaluation assumes the test set is generated independently of the model, which is true here (MovieLens collected data before any of our models existed) but would not hold in a live system.
-
-5. **Position bias in ground truth.** MovieLens ratings are explicit (users actively chose to rate), so position bias (users only clicking top results) is less of a concern here than in implicit-feedback datasets. However, the selection bias discussed in the EDA still applies: users only rate what they chose to watch.
-
-6. **Cold-start ceiling.** We retain cold-start users/items in the test set (correctly), but a purely collaborative model will necessarily score near zero for them. This is not a flaw in evaluation — it accurately reflects the model's limitation — but it means aggregate metrics will always be dragged down by cold-start entities, even for an otherwise excellent model.
+4. **Cold-start ceiling.** We retain cold-start users/items in the test set (correctly), but a purely collaborative model will necessarily score near zero for them. This is not a flaw in evaluation — it accurately reflects the model's limitation — but it means aggregate metrics will always be dragged down by cold-start entities, even for an otherwise excellent model.
 
 ---
 
