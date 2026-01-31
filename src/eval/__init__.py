@@ -1,1 +1,1 @@
-from eval import evaluate, Metrics
+from .eval import evaluate, Metrics
