@@ -29,7 +29,7 @@ class RecommenderModel(ABC):
         ratings : pd.DataFrame
             Observed interactions (UserID, MovieID, Rating, Timestamp).
         movies : pd.DataFrame
-            Movie side-information (MovieID, Title, Genres).
+            Movie side-information (movie_id, title, genres).
         k : int
             Number of recommendations per user.
 

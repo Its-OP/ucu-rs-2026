@@ -1,8 +1,11 @@
 pandas~=2.3.3
-numpy
+numpy~=2.4.1
 matplotlib
 seaborn
-pytest
-requests
-tqdm
+pytest~=9.0.2
+requests~=2.32.5
+tqdm~=4.67.2
 sentence_transformers
+faiss-cpu~=1.13.2
+scikit-learn~=1.8.0
+sentence-transformers~=5.2.2
