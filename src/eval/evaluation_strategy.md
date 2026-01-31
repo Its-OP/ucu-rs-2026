@@ -63,6 +63,8 @@ Timeline: Apr 2000 ────────────────────�
 - The validation set is used for hyperparameter tuning (latent dimension, regularization strength, number of neighbors, K). The test set is held out until final reporting.
 - Some users/items in val/test may have zero training interactions (cold-start). These are retained — not filtered out — because cold-start is a real deployment scenario (12.4% of users, 12.0% of items per EDA).
 
+> **Why only ratings are split.** The temporal split applies exclusively to the ratings table. The users and movies tables contain side-information (demographics, genres) that we treat as static. In reality, user preferences do drift over time — a user may favour comedies today and thrillers a year later — but the MovieLens 1M collection spans roughly 35 months, and the feature granularity available (age bracket, gender, genre tags) is too coarse to capture such shifts meaningfully. We therefore neglect temporal changes in user/movie attributes and treat them as time-invariant. A model is always allowed to know that a user or movie *exists* and to access its features — what it cannot see during training are future *interactions*. This mirrors deployment reality: a production system has access to the full user/item catalog but must predict future behaviour from past ratings alone.
+
 ### 3.3 Relevance Definitions
 
 Our metric suite uses two relevance schemes — **graded** and **binary** — depending on the metric:
