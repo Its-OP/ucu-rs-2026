@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -16,10 +15,10 @@ class PerfectModel(RecommenderModel):
         result = {}
         for user_id, group in self._test.groupby("UserID"):
             top = group.nlargest(k, "Rating")
-            result[user_id] = np.array([
+            result[user_id] = [
                 Rating(movie_id=row.MovieID, score=row.Rating)
                 for row in top.itertuples()
-            ])
+            ]
         return result
 
 
@@ -37,10 +36,10 @@ class PopularityModel(RecommenderModel):
 
     def predict(self, users, ratings, movies, k=10):
         result = {}
-        popular_recs = np.array([
+        popular_recs = [
             Rating(movie_id=mid, score=float(100 - i))
             for i, mid in enumerate(self._popular[:k])
-        ])
+        ]
         for user_id in users["UserID"].unique():
             result[user_id] = popular_recs
         return result

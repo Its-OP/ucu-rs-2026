@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
 
 
@@ -20,7 +19,7 @@ class RecommenderModel(ABC):
         ratings: pd.DataFrame,
         movies: pd.DataFrame,
         k: int = 10,
-    ) -> np.ndarray:
+    ) -> dict[int, list[Rating]]:
         """Produce top-K recommendations for each user.
 
         Parameters
@@ -36,8 +35,8 @@ class RecommenderModel(ABC):
 
         Returns
         -------
-        np.ndarray
-            Array of Rating objects ordered by score (descending),
-            shape (n_users, k).
+        dict[int, list[Rating]]
+            Mapping from UserID to a list of Rating objects sorted by
+            score descending (length up to k).
         """
         ...
