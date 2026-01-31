@@ -6,19 +6,19 @@ def ndcg_at_k(ranked_items: np.ndarray, true_ratings: dict[int, float], k: int =
 
     Parameters
     ----------
-    ranked_items : array-like of int
+    ranked_items : np.ndarray
         Item IDs ordered by predicted score (descending). Only the first
         *k* entries are used.
     true_ratings : dict[int, float]
         Mapping from item ID to its ground-truth rating (1–5). Items
-        absent from this dict are treated as relevance 0.
+        absent from this dict are treated as having zero gain.
     k : int
         Cut-off position.
 
     Returns
     -------
     float
-        NDCG@K in [0, 1]. Returns 0.0 when there are no relevant items.
+        NDCG@K in [0, 1]. Returns 0.0 when there are no rated items.
     """
     ranked_items = np.asarray(ranked_items)[:k]
     gains = np.array([true_ratings.get(item, 0.0) for item in ranked_items])
