@@ -1,8 +1,11 @@
+import logging
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge
 import faiss
 from .base import RecommenderModel, Rating
+
+logger = logging.getLogger(__name__)
 
 
 class ContentBasedRecommender(RecommenderModel):
@@ -12,8 +15,10 @@ class ContentBasedRecommender(RecommenderModel):
     2. Per-user Ridge regression re-ranks candidates
     """
 
-    def __init__(self, alpha: float = 1.0):
+    def __init__(self, alpha: float = 1.0, relevance_threshold: float = 3.5, min_liked: int = 5):
         self.alpha = alpha
+        self.relevance_threshold = relevance_threshold
+        self.min_liked = min_liked
 
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
@@ -25,6 +30,7 @@ class ContentBasedRecommender(RecommenderModel):
         self.user_profiles: dict[int, np.ndarray] = {}
         self.user_regressors: dict[int, Ridge] = {}
         self.user_watched: dict[int, set[int]] = {}
+        self.global_top: list[int] = []  # movie_ids sorted by global avg rating
 
     def load(self, movies: pd.DataFrame) -> "ContentBasedRecommender":
         """
@@ -48,6 +54,10 @@ class ContentBasedRecommender(RecommenderModel):
     def fit(self, ratings: pd.DataFrame) -> "ContentBasedRecommender":
         """
         Build user profiles and fit per-user regressors.
+
+        Search profiles are built from liked movies only (rating > relevance_threshold).
+        Ridge regressors are trained on the entire user history to avoid
+        degenerating into predicting high scores only.
         """
         if self.embeddings is None:
             raise RuntimeError("Embeddings are missing. Call .load(movies) before .fit().")
@@ -56,37 +66,52 @@ class ContentBasedRecommender(RecommenderModel):
         self.user_regressors = {}
         self.user_watched = {}
 
+        # Pre-compute global top movies (by average rating) for cold-start fallback
+        avg_ratings = (
+            ratings[ratings["MovieID"].isin(self.movie_id_to_idx)]
+            .groupby("MovieID")["Rating"]
+            .mean()
+            .sort_values(ascending=False)
+        )
+        self.global_top = avg_ratings.index.tolist()
+
         for user_id, group in ratings.groupby("UserID"):
-            user_embs, user_scores, watched = [], [], set()
+            all_embs, all_scores, watched = [], [], set()
+            liked_embs = []
 
             for _, row in group.iterrows():
                 movie_id = row["MovieID"]
                 if movie_id in self.movie_id_to_idx:
                     idx = self.movie_id_to_idx[movie_id]
-                    user_embs.append(self.embeddings[idx])
-                    user_scores.append(row["Rating"])
+                    emb = self.embeddings[idx]
+                    score = row["Rating"]
+
+                    all_embs.append(emb)
+                    all_scores.append(score)
                     watched.add(movie_id)
+
+                    if score > self.relevance_threshold:
+                        liked_embs.append(emb)
 
             self.user_watched[user_id] = watched
 
-            if len(user_embs) < 2:
+            if len(all_embs) < 2:
                 continue
 
-            user_embs = np.array(user_embs)
-            user_scores = np.array(user_scores)
+            all_embs = np.array(all_embs)
+            all_scores = np.array(all_scores)
 
-            # Make lowest-scored items have score '1'
-            weights = user_scores - user_scores.min() + 1
-            # Make weights sum up to '1'
-            weights = weights / weights.sum()
-            profile = np.average(user_embs, axis=0, weights=weights)
-            profile = profile.reshape(1, -1).astype("float32")
-            faiss.normalize_L2(profile)
-            self.user_profiles[user_id] = profile
+            # Search profile: built from liked movies only
+            if len(liked_embs) >= self.min_liked:
+                liked_embs = np.array(liked_embs)
+                profile = liked_embs.mean(axis=0)
+                profile = profile.reshape(1, -1).astype("float32")
+                faiss.normalize_L2(profile)
+                self.user_profiles[user_id] = profile
 
-            # Per-user regressor
+            # Per-user regressor: trained on full history
             regressor = Ridge(alpha=self.alpha)
-            regressor.fit(user_embs, user_scores)
+            regressor.fit(all_embs, all_scores)
             self.user_regressors[user_id] = regressor
 
         return self
@@ -109,15 +134,25 @@ class ContentBasedRecommender(RecommenderModel):
 
         results = {}
         search_size = n_candidates * 2
+        n_profiled = 0
+        n_fallback = 0
 
         for user_id in users["UserID"].unique():
+            watched = self.user_watched.get(user_id, set())
+
+            # Users without a liked-movie profile: fall back to global top
             if user_id not in self.user_profiles:
-                results[user_id] = []
+                top_movies = [
+                    mid for mid in self.global_top if mid not in watched
+                ][:k]
+                results[user_id] = [
+                    Rating(movie_id=int(mid), score=float(k - i))
+                    for i, mid in enumerate(top_movies)
+                ]
                 continue
 
             profile = self.user_profiles[user_id]
             regressor = self.user_regressors[user_id]
-            watched = self.user_watched.get(user_id, set())
 
             # Stage 1: ANN candidate retrieval
             _, indices = self.index.search(profile, search_size)

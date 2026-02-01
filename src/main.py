@@ -21,7 +21,7 @@ def main(
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    model = ContentBasedRecommender(alpha=alpha)
+    model = ContentBasedRecommender(alpha=alpha, relevance_threshold=threshold)
 
     logger.info("Loading movie embeddings and building FAISS index...")
     model.load(movies)
