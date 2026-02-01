@@ -24,8 +24,8 @@ def test_none_relevant():
     # act
     result = precision_at_k(ranked_item_ids, true_ratings, k=3)
 
-    # assert
-    assert result == pytest.approx(0.0)
+    # assert — no relevant items → None
+    assert result is None
 
 
 def test_partial_hits():
@@ -48,8 +48,8 @@ def test_unknown_items_are_non_relevant():
     # act
     result = precision_at_k(ranked_item_ids, true_ratings, k=3)
 
-    # assert — only item 1 is relevant, 99 and 88 are unknown
-    assert result == pytest.approx(1 / 3)
+    # assert — 1 relevant item, effective_k=1, top-1 is 99 (miss) → 0.0
+    assert result == pytest.approx(0.0)
 
 
 def test_k_truncates():
@@ -67,15 +67,15 @@ def test_k_truncates():
 def test_custom_threshold():
     # arrange
     ranked_item_ids = np.array([1, 2, 3])
-    true_ratings = {1: 3.0, 2: 3.5, 3: 2.0}
+    true_ratings = {1: 3.0, 2: 3.5, 3: 3.2}
 
     # act
     result_default = precision_at_k(ranked_item_ids, true_ratings, k=3)
     result_custom = precision_at_k(ranked_item_ids, true_ratings, k=3, threshold=3.0)
 
-    # assert — default threshold=4 gives 0 hits; threshold=3 gives 2/3
-    assert result_default == pytest.approx(0.0)
-    assert result_custom == pytest.approx(2 / 3)
+    # assert
+    assert result_default is None
+    assert result_custom == pytest.approx(1.0)
 
 
 def test_k_larger_than_list():
@@ -86,24 +86,11 @@ def test_k_larger_than_list():
     # act
     result = precision_at_k(ranked_item_ids, true_ratings, k=5)
 
-    # assert — k=5 but only 2 items → 2/5
-    assert result == pytest.approx(2 / 5)
-
-
-def test_accepts_numpy_array():
-    # arrange
-    ranked_item_ids = np.array([1, 2])
-    true_ratings = {1: 5.0, 2: 5.0}
-
-    # act
-    result = precision_at_k(ranked_item_ids, true_ratings, k=2)
-
-    # assert
+    # assert — 2 relevant, effective_k=min(5,2)=2, both hit → 1.0
     assert result == pytest.approx(1.0)
 
 
 def test_boundary_rating_is_relevant():
-    """A rating exactly at threshold should count as relevant."""
     # arrange
     ranked_item_ids = np.array([1])
     true_ratings = {1: 4.0}
@@ -111,7 +98,7 @@ def test_boundary_rating_is_relevant():
     # act
     result = precision_at_k(ranked_item_ids, true_ratings, k=1)
 
-    # assert
+    # assert 4 === 4
     assert result == pytest.approx(1.0)
 
 
@@ -123,5 +110,5 @@ def test_just_below_threshold_is_not_relevant():
     # act
     result = precision_at_k(ranked_item_ids, true_ratings, k=1)
 
-    # assert
-    assert result == pytest.approx(0.0)
+    # assert 3.99 < 4
+    assert result is None

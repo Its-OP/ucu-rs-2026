@@ -17,7 +17,7 @@ def test_all_relevant_captured():
 
 
 def test_no_relevant_items_in_truth():
-    """When the user has no items >= threshold, recall is 0."""
+    """When the user has no items >= threshold, recall is None."""
     # arrange
     ranked_item_ids = np.array([1, 2, 3])
     true_ratings = {1: 2.0, 2: 3.0, 3: 1.0}
@@ -26,7 +26,7 @@ def test_no_relevant_items_in_truth():
     result = recall_at_k(ranked_item_ids, true_ratings, k=3)
 
     # assert
-    assert result == pytest.approx(0.0)
+    assert result is None
 
 
 def test_empty_truth():
@@ -38,7 +38,7 @@ def test_empty_truth():
     result = recall_at_k(ranked_item_ids, true_ratings, k=3)
 
     # assert
-    assert result == pytest.approx(0.0)
+    assert result is None
 
 
 def test_partial_recall():
@@ -74,9 +74,10 @@ def test_k_truncates():
     result_k1 = recall_at_k(ranked_item_ids, true_ratings, k=1)
     result_k3 = recall_at_k(ranked_item_ids, true_ratings, k=3)
 
-    # assert — k=1: {1} captured out of {1,3} → 1/2; k=3: {1,3} → 2/2
+    # assert — k=1: effective_k=1, {1} captured out of {1,3} → 1/2
+    #          k=3: effective_k=min(3,2)=2, top-2=[1,2], only {1} captured → 1/2
     assert result_k1 == pytest.approx(0.5)
-    assert result_k3 == pytest.approx(1.0)
+    assert result_k3 == pytest.approx(0.5)
 
 
 def test_unknown_items_are_non_relevant():
@@ -87,8 +88,8 @@ def test_unknown_items_are_non_relevant():
     # act
     result = recall_at_k(ranked_item_ids, true_ratings, k=3)
 
-    # assert — relevant: {1, 2}, captured: {1}
-    assert result == pytest.approx(0.5)
+    # assert — 2 relevant, effective_k=2, top-2=[99,88], 0 hits → 0/2
+    assert result == pytest.approx(0.0)
 
 
 def test_custom_threshold():
@@ -100,8 +101,8 @@ def test_custom_threshold():
     result_default = recall_at_k(ranked_item_ids, true_ratings, k=3)
     result_custom = recall_at_k(ranked_item_ids, true_ratings, k=3, threshold=3.0)
 
-    # assert — default: 0 relevant → 0.0; threshold=3: {1,2} captured → 1.0
-    assert result_default == pytest.approx(0.0)
+    # assert — default: 0 relevant → None; threshold=3: effective_k=2, top-2=[1,2], both relevant → 1.0
+    assert result_default is None
     assert result_custom == pytest.approx(1.0)
 
 
