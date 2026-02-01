@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -7,6 +8,8 @@ from src.eval.metrics.ndcg import ndcg_at_k
 from src.eval.metrics.precision import precision_at_k
 from src.eval.metrics.recall import recall_at_k
 from src.models.base import RecommenderModel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,15 +62,34 @@ def evaluate(
     ndcg_scores = []
     precision_scores = []
     recall_scores = []
+    n_skipped = 0
 
     for user_id, rated_items in predictions.items():
         true_ratings = ground_truth.get(user_id, {})
 
         ranked_item_ids = np.array([r.movie_id for r in rated_items])
 
-        ndcg_scores.append(ndcg_at_k(ranked_item_ids, true_ratings, k=k))
-        precision_scores.append(precision_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold))
-        recall_scores.append(recall_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold))
+        ndcg = ndcg_at_k(ranked_item_ids, true_ratings, k=k)
+        precision = precision_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold)
+        recall = recall_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold)
+
+        if precision is None or recall is None:
+            n_skipped += 1
+            logger.warning(
+                "Skipping user %d users with no relevant items in test set",
+                user_id, len(predictions),
+            )
+            continue
+
+        ndcg_scores.append(ndcg)
+        precision_scores.append(precision)
+        recall_scores.append(recall)
+
+    if n_skipped > 0:
+        logger.warning(
+            "Skipped %d/%d users with no relevant items in test set",
+            n_skipped, len(predictions),
+        )
 
     return Metrics(
         ndcg=float(np.mean(ndcg_scores)),
