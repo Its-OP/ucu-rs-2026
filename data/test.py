@@ -1,0 +1,2 @@
+from dataframes import movies_enriched
+print(movies_enriched.columns)

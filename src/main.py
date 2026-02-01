@@ -62,5 +62,5 @@ if __name__ == "__main__":
         k=10,
         threshold=4.0,
         n_candidates=200,
-        alpha=1.0,
+        alpha=10.0,
     )

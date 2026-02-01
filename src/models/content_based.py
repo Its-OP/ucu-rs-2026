@@ -15,10 +15,15 @@ class ContentBasedRecommender(RecommenderModel):
     2. Per-user Ridge regression re-ranks candidates
     """
 
-    def __init__(self, alpha: float = 1.0, relevance_threshold: float = 3.5, min_liked: int = 5):
+    def __init__(self,
+                 alpha: float = 1.0,
+                 relevance_threshold: float = 4,
+                 min_liked: int = 5,
+                 min_ratings: int = 100):
         self.alpha = alpha
         self.relevance_threshold = relevance_threshold
         self.min_liked = min_liked
+        self.min_ratings = min_ratings
 
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
@@ -31,6 +36,7 @@ class ContentBasedRecommender(RecommenderModel):
         self.user_regressors: dict[int, Ridge] = {}
         self.user_watched: dict[int, set[int]] = {}
         self.global_top: list[int] = []  # movie_ids sorted by global avg rating
+        self.global_avg: dict[int, float] = {}  # movie_id → global avg rating
 
     def load(self, movies: pd.DataFrame) -> "ContentBasedRecommender":
         """
@@ -67,13 +73,14 @@ class ContentBasedRecommender(RecommenderModel):
         self.user_watched = {}
 
         # Pre-compute global top movies (by average rating) for cold-start fallback
+        known = ratings[ratings["MovieID"].isin(self.movie_id_to_idx)]
+        grouped = known.groupby("MovieID")["Rating"]
         avg_ratings = (
-            ratings[ratings["MovieID"].isin(self.movie_id_to_idx)]
-            .groupby("MovieID")["Rating"]
-            .mean()
+            grouped.mean()[grouped.count() >= self.min_ratings]
             .sort_values(ascending=False)
         )
         self.global_top = avg_ratings.index.tolist()
+        self.global_avg = avg_ratings.to_dict()
 
         for user_id, group in ratings.groupby("UserID"):
             all_embs, all_scores, watched = [], [], set()
@@ -122,7 +129,7 @@ class ContentBasedRecommender(RecommenderModel):
         ratings: pd.DataFrame,
         movies: pd.DataFrame,
         k: int = 10,
-        n_candidates: int = 100
+        n_candidates: int = 300
     ) -> dict[int, list[Rating]]:
         """
         Generate top-k recommendations for each user.
@@ -134,8 +141,6 @@ class ContentBasedRecommender(RecommenderModel):
 
         results = {}
         search_size = n_candidates * 2
-        n_profiled = 0
-        n_fallback = 0
 
         for user_id in users["UserID"].unique():
             watched = self.user_watched.get(user_id, set())
@@ -143,11 +148,11 @@ class ContentBasedRecommender(RecommenderModel):
             # Users without a liked-movie profile: fall back to global top
             if user_id not in self.user_profiles:
                 top_movies = [
-                    mid for mid in self.global_top if mid not in watched
+                    movie_id for movie_id in self.global_top if movie_id not in watched
                 ][:k]
                 results[user_id] = [
-                    Rating(movie_id=int(mid), score=float(k - i))
-                    for i, mid in enumerate(top_movies)
+                    Rating(movie_id=int(movie_id), score=self.global_avg[movie_id])
+                    for movie_id in top_movies
                 ]
                 continue
 
