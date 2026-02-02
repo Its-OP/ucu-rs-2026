@@ -22,7 +22,7 @@ class ContentBasedRecommender(RecommenderModel):
                  relevance_threshold: float = 4,
                  min_liked: int = 5,
                  min_ratings: int = 100,
-                 scoring: Literal["similarity", "mean_rating"] = "similarity",
+                 scoring: Literal["similarity", "mean_rating", "popular"] = "similarity",
                  metric: Literal["cosine", "pearson"] = "cosine"):
         self.relevance_threshold = relevance_threshold
         self.min_liked = min_liked
@@ -33,7 +33,6 @@ class ContentBasedRecommender(RecommenderModel):
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
         self.embeddings: np.ndarray | None = None
-        self.emb_mean: np.ndarray | None = None  # mean vector for pearson centering
         self.movie_id_to_idx: dict[int, int] = {}
         self.idx_to_movie_id: dict[int, int] = {}
 
@@ -56,8 +55,7 @@ class ContentBasedRecommender(RecommenderModel):
 
         # Mean-center for Pearson correlation (cosine on centered vectors)
         if self.metric == "pearson":
-            self.emb_mean = self.embeddings.mean(axis=0)
-            self.embeddings -= self.emb_mean
+            self.embeddings -= self.embeddings.mean(axis=0)
 
         faiss.normalize_L2(self.embeddings)
 
@@ -106,9 +104,9 @@ class ContentBasedRecommender(RecommenderModel):
 
             self.user_watched[user_id] = watched
 
-            # Search profile: built from liked movies only
-            # Note: self.embeddings are already centered (if pearson) and
-            # normalized, so the profile just needs L2 normalization.
+            # Search profile: mean of liked-movie embeddings.
+            # Embeddings are already centered (if pearson) and L2-normalized,
+            # so the profile just needs re-normalization after averaging.
             if len(liked_embs) >= self.min_liked:
                 liked_embs = np.array(liked_embs)
                 profile = liked_embs.mean(axis=0)
@@ -140,8 +138,8 @@ class ContentBasedRecommender(RecommenderModel):
         for user_id in users["UserID"].unique():
             watched = self.user_watched.get(user_id, set())
 
-            # Users without a liked-movie profile: fall back to global top
-            if user_id not in self.user_profiles:
+            # Popular baseline or users without a liked-movie profile: global top
+            if self.scoring == "popular" or user_id not in self.user_profiles:
                 top_movies = [
                     movie_id for movie_id in self.global_top if movie_id not in watched
                 ][:k]
@@ -153,7 +151,7 @@ class ContentBasedRecommender(RecommenderModel):
 
             profile = self.user_profiles[user_id]
 
-            # Stage 1: ANN candidate retrieval
+            # Stage 1: ANN candidate retrieval (IndexFlatIP, higher = more similar)
             similarities, indices = self.index.search(profile, search_size)
 
             # Filter watched movies

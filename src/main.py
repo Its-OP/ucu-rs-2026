@@ -63,6 +63,6 @@ if __name__ == "__main__":
         k=10,
         threshold=4.0,
         n_candidates=200,
-        scoring="mean_rating",
-        metric='cosine',
+        scoring="similarity",
+        metric='euclidean',
     )
