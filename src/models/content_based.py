@@ -22,7 +22,7 @@ class ContentBasedRecommender(RecommenderModel):
                  relevance_threshold: float = 4,
                  min_liked: int = 5,
                  min_ratings: int = 100,
-                 scoring: Literal["similarity", "mean_rating", "hybrid", "popular"] = "similarity",
+                 scoring: Literal["similarity", "mean_rating", "hybrid", "popular", "lambdamart"] = "similarity",
                  metric: Literal["cosine", "pearson"] = "cosine",
                  beta: float = 0.8,
                  recency_decay: float = 0.0,
@@ -48,6 +48,11 @@ class ContentBasedRecommender(RecommenderModel):
         self.global_top: list[int] = []  # movie_ids sorted by global avg rating
         self.global_avg: dict[int, float] = {}  # movie_id → global avg rating
         self.movie_avg: dict[int, float] = {}  # movie_id → mean rating (all movies)
+        self.movie_rating_count: dict[int, int] = {}  # movie_id → rating count
+        self.user_stats: dict[int, tuple[float, int, int]] = {}  # uid → (mean, count, liked_count)
+
+        # Set by .train_ranker()
+        self.ranker = None
 
     def load(self, movies: pd.DataFrame) -> "ContentBasedRecommender":
         """
@@ -87,6 +92,21 @@ class ContentBasedRecommender(RecommenderModel):
         known = ratings[ratings["MovieID"].isin(self.movie_id_to_idx)]
         grouped = known.groupby("MovieID")["Rating"]
         self.movie_avg = grouped.mean().to_dict()
+        self.movie_rating_count = grouped.count().to_dict()
+
+        # Per-user aggregate stats (for LambdaMART features)
+        user_grouped = ratings.groupby("UserID")["Rating"]
+        user_means = user_grouped.mean()
+        user_counts = user_grouped.count()
+        user_liked = (
+            ratings[ratings["Rating"] > self.relevance_threshold]
+            .groupby("UserID")
+            .size()
+        )
+        self.user_stats = {
+            uid: (float(user_means[uid]), int(user_counts[uid]), int(user_liked.get(uid, 0)))
+            for uid in user_means.index
+        }
 
         # Global top movies (filtered by min_ratings) for cold-start fallback
         avg_ratings = (
@@ -170,6 +190,123 @@ class ContentBasedRecommender(RecommenderModel):
 
         return self
 
+    # -- LambdaMART feature names (positional in the ndarray) --
+    _FEATURE_NAMES = [
+        "cosine_similarity",
+        "movie_mean_rating",
+        "movie_rating_count",
+        "user_mean_rating",
+        "user_rating_count",
+        "user_liked_count",
+    ]
+
+    def _compute_features(
+        self,
+        user_id: int,
+        candidates: list[tuple[int, float]],
+    ) -> np.ndarray:
+        """
+        Compute LambdaMART feature matrix for a list of (faiss_idx, cosine_sim)
+        candidates belonging to one user.
+
+        Returns ndarray of shape (n_candidates, 6).
+        """
+        n = len(candidates)
+        features = np.zeros((n, 6), dtype=np.float32)
+
+        u_mean, u_count, u_liked = self.user_stats.get(user_id, (0.0, 0, 0))
+
+        for i, (idx, sim) in enumerate(candidates):
+            movie_id = self.idx_to_movie_id[idx]
+            features[i, 0] = sim
+            features[i, 1] = self.movie_avg.get(movie_id, 0.0)
+            features[i, 2] = self.movie_rating_count.get(movie_id, 0)
+            features[i, 3] = u_mean
+            features[i, 4] = u_count
+            features[i, 5] = u_liked
+
+        return features
+
+    def train_ranker(
+        self,
+        ratings: pd.DataFrame,
+        n_candidates: int = 300,
+    ) -> "ContentBasedRecommender":
+        """
+        Train a LambdaMART re-ranker on the training data.
+
+        Must be called after load() and fit().
+        For each user with a profile, retrieves n_candidates from FAISS
+        (WITHOUT filtering watched, so some candidates have known ratings),
+        labels each with the user's actual rating (or 0), and trains
+        an LGBMRanker with user-level groups.
+        """
+        from sklearn.ensemble import GradientBoostingRegressor
+        from tqdm import tqdm
+
+        if self.index is None or not self.user_profiles:
+            raise RuntimeError("Call load() and fit() before train_ranker().")
+
+        # Fast lookup: (user_id, movie_id) → rating
+        rating_lookup: dict[tuple[int, int], float] = {}
+        for uid, mid, r in zip(ratings["UserID"], ratings["MovieID"], ratings["Rating"]):
+            rating_lookup[(int(uid), int(mid))] = float(r)
+
+        all_features: list[np.ndarray] = []
+        all_labels: list[np.ndarray] = []
+
+        search_size = n_candidates * 2
+
+        for user_id, profile in tqdm(
+            self.user_profiles.items(),
+            desc="Building ranker training data",
+            total=len(self.user_profiles),
+        ):
+            similarities, indices = self.index.search(profile, search_size)
+
+            # Do NOT filter watched — we need rated movies as positive labels
+            candidates = [
+                (int(idx), float(sim))
+                for idx, sim in zip(indices[0], similarities[0])
+            ][:n_candidates]
+
+            if len(candidates) == 0:
+                continue
+
+            features = self._compute_features(user_id, candidates)
+
+            labels = np.zeros(len(candidates), dtype=np.float32)
+            for i, (idx, _) in enumerate(candidates):
+                movie_id = self.idx_to_movie_id[idx]
+                labels[i] = rating_lookup.get((user_id, movie_id), 0.0)
+
+            all_features.append(features)
+            all_labels.append(labels)
+
+        X_train = np.vstack(all_features)
+        y_train = np.concatenate(all_labels)
+
+        logger.info(
+            "Reranker training: %d samples, %d features",
+            X_train.shape[0], X_train.shape[1],
+        )
+
+        self.ranker = GradientBoostingRegressor(
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.1,
+            min_samples_leaf=50,
+            subsample=0.8,
+            verbose=1,
+        )
+
+        self.ranker.fit(X_train, y_train)
+
+        importance = dict(zip(self._FEATURE_NAMES, self.ranker.feature_importances_))
+        logger.info("Feature importances: %s", importance)
+
+        return self
+
     def predict(
         self,
         users: pd.DataFrame,
@@ -238,6 +375,18 @@ class ContentBasedRecommender(RecommenderModel):
                      self.beta * (lo + (hi - lo) * max(0.0, sim))
                      + (1.0 - self.beta) * self.movie_avg.get(self.idx_to_movie_id[idx], lo))
                     for idx, sim in candidates
+                ]
+            elif self.scoring == "lambdamart":
+                if self.ranker is None:
+                    raise RuntimeError(
+                        "Ranker not trained. Call .train_ranker() before "
+                        ".predict() with scoring='lambdamart'."
+                    )
+                features = self._compute_features(user_id, candidates)
+                lgbm_scores = self.ranker.predict(features)
+                scored = [
+                    (candidates[i][0], float(lgbm_scores[i]))
+                    for i in range(len(candidates))
                 ]
             else:  # mean_rating
                 scored = [

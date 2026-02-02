@@ -33,6 +33,10 @@ def main(
     logger.info("Fitting user profiles on train split...")
     model.fit(train_ratings)
 
+    if scoring == "lambdamart":
+        logger.info("Training LambdaMART re-ranker...")
+        model.train_ranker(train_ratings, n_candidates=50)
+
     logger.info("Running predictions on train split (sanity check)...")
     train_preds = model.predict(users, train_ratings, movies, k=k, n_candidates=n_candidates)
 
@@ -63,12 +67,12 @@ if __name__ == "__main__":
         eval_ratings=val,
         users=users,
         movies=movies_enriched,
-        k=12,
+        k=10,
         threshold=4.0,
         n_candidates=200,
-        scoring="hybrid",
+        scoring="lambdamart",
         metric="pearson",
         beta=0.9,
         recency_decay=1.3,
-        n_neighbors=10,
+        n_neighbors=12,
     )
