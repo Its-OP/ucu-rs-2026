@@ -17,16 +17,16 @@ def main(
     k: int = 10,
     threshold: float = 4.0,
     n_candidates: int = 100,
-    alpha: float = 1.0,
+    scoring: str = "similarity",
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    model = ContentBasedRecommender(alpha=alpha, relevance_threshold=threshold)
+    model = ContentBasedRecommender(relevance_threshold=threshold, scoring=scoring)
 
     logger.info("Loading movie embeddings and building FAISS index...")
     model.load(movies)
 
-    logger.info("Fitting user profiles and regressors on train split...")
+    logger.info("Fitting user profiles on train split...")
     model.fit(train_ratings)
 
     logger.info("Running predictions on train split (sanity check)...")
@@ -62,5 +62,5 @@ if __name__ == "__main__":
         k=10,
         threshold=4.0,
         n_candidates=200,
-        alpha=10.0,
+        scoring="mean_rating",
     )
