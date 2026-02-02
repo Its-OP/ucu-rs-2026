@@ -92,6 +92,7 @@ class ContentBasedRecommender(RecommenderModel):
 
         for user_id, group in ratings.groupby("UserID"):
             liked_embs = []
+            liked_weights = []
             watched = set()
 
             for _, row in group.iterrows():
@@ -101,15 +102,21 @@ class ContentBasedRecommender(RecommenderModel):
                     if row["Rating"] > self.relevance_threshold:
                         idx = self.movie_id_to_idx[movie_id]
                         liked_embs.append(self.embeddings[idx])
+                        # Non-linear weight: floor at 0.3, then square so
+                        # 5-star (w=1.0) contributes ~3.3× more than 4.1-star (w=0.3)
+                        raw_w = max(0.3, row["Rating"] - self.relevance_threshold)
+                        liked_weights.append(raw_w ** 2)
 
             self.user_watched[user_id] = watched
 
-            # Search profile: mean of liked-movie embeddings.
+            # Search profile: rating-weighted mean of liked-movie embeddings.
+            # Higher-rated movies pull the profile disproportionately more.
             # Embeddings are already centered (if pearson) and L2-normalized,
             # so the profile just needs re-normalization after averaging.
             if len(liked_embs) >= self.min_liked:
                 liked_embs = np.array(liked_embs)
-                profile = liked_embs.mean(axis=0)
+                weights = np.array(liked_weights, dtype="float32")
+                profile = np.average(liked_embs, axis=0, weights=weights)
                 profile = profile.reshape(1, -1).astype("float32")
                 faiss.normalize_L2(profile)
                 self.user_profiles[user_id] = profile
