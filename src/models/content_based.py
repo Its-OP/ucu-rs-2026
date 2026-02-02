@@ -22,15 +22,18 @@ class ContentBasedRecommender(RecommenderModel):
                  relevance_threshold: float = 4,
                  min_liked: int = 5,
                  min_ratings: int = 100,
-                 scoring: Literal["similarity", "mean_rating"] = "similarity"):
+                 scoring: Literal["similarity", "mean_rating"] = "similarity",
+                 metric: Literal["cosine", "pearson"] = "cosine"):
         self.relevance_threshold = relevance_threshold
         self.min_liked = min_liked
         self.min_ratings = min_ratings
         self.scoring = scoring
+        self.metric = metric
 
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
         self.embeddings: np.ndarray | None = None
+        self.emb_mean: np.ndarray | None = None  # mean vector for pearson centering
         self.movie_id_to_idx: dict[int, int] = {}
         self.idx_to_movie_id: dict[int, int] = {}
 
@@ -51,7 +54,11 @@ class ContentBasedRecommender(RecommenderModel):
         self.movie_id_to_idx = {movie_id: idx for idx, movie_id in enumerate(movie_ids)}
         self.idx_to_movie_id = {idx: movie_id for movie_id, idx in self.movie_id_to_idx.items()}
 
-        # Normalize for cosine similarity
+        # Mean-center for Pearson correlation (cosine on centered vectors)
+        if self.metric == "pearson":
+            self.emb_mean = self.embeddings.mean(axis=0)
+            self.embeddings -= self.emb_mean
+
         faiss.normalize_L2(self.embeddings)
 
         dim = self.embeddings.shape[1]
@@ -100,6 +107,8 @@ class ContentBasedRecommender(RecommenderModel):
             self.user_watched[user_id] = watched
 
             # Search profile: built from liked movies only
+            # Note: self.embeddings are already centered (if pearson) and
+            # normalized, so the profile just needs L2 normalization.
             if len(liked_embs) >= self.min_liked:
                 liked_embs = np.array(liked_embs)
                 profile = liked_embs.mean(axis=0)

@@ -18,10 +18,11 @@ def main(
     threshold: float = 4.0,
     n_candidates: int = 100,
     scoring: str = "similarity",
+    metric: str = "cosine",
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    model = ContentBasedRecommender(relevance_threshold=threshold, scoring=scoring)
+    model = ContentBasedRecommender(relevance_threshold=threshold, scoring=scoring, metric=metric)
 
     logger.info("Loading movie embeddings and building FAISS index...")
     model.load(movies)
@@ -63,4 +64,5 @@ if __name__ == "__main__":
         threshold=4.0,
         n_candidates=200,
         scoring="mean_rating",
+        metric='cosine',
     )
