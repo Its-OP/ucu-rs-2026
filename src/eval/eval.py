@@ -75,10 +75,6 @@ def evaluate(
 
         if precision is None or recall is None:
             n_skipped += 1
-            logger.warning(
-                "Skipping user %d: no relevant items in test set (skipped so far %d/%d)",
-                user_id, n_skipped, len(predictions),
-            )
             continue
 
         ndcg_scores.append(ndcg)
