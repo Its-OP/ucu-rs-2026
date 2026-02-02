@@ -40,3 +40,18 @@ _t2 = ratings["Timestamp"].quantile(0.875)
 train = ratings[ratings['Timestamp'] < _t1].copy()
 val = ratings[(ratings['Timestamp'] >= _t1) & (ratings['Timestamp'] < _t2)].copy()
 test = ratings[ratings['Timestamp'] >= _t2].copy()
+
+# Per-user temporal split (75 / 25 by each user's own timeline)
+# Each user's ratings are sorted by timestamp; the first 75% go to train,
+# the last 25% go to val. This avoids future-leakage within each user.
+
+_user_train, _user_val = [], []
+for _, _group in ratings.groupby('UserID'):
+    _group = _group.sort_values('Timestamp')
+    _n = len(_group)
+    _split = int(_n * 0.75)
+    _user_train.append(_group.iloc[:_split])
+    _user_val.append(_group.iloc[_split:])
+
+user_based_temporal_train = pd.concat(_user_train, ignore_index=True)
+user_based_temporal_val = pd.concat(_user_val, ignore_index=True)

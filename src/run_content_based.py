@@ -10,7 +10,7 @@ Usage:
 import argparse
 import logging
 
-from data.dataframes import movies_enriched, users, train, val
+from data.dataframes import movies_enriched, users, user_based_temporal_train, user_based_temporal_val
 from src.eval.eval import evaluate
 from src.models.content_based import ContentBasedRecommender
 
@@ -87,15 +87,15 @@ def main() -> None:
     model.load(movies_enriched)
 
     logger.info("Fitting user profiles on train split...")
-    model.fit(train)
+    model.fit(user_based_temporal_train)
 
     if args.scoring == "gbr_reranker":
         logger.info("Training GBR re-ranker...")
-        model.train_ranker(train, n_candidates=args.ranker_candidates)
+        model.train_ranker(user_based_temporal_train, n_candidates=args.ranker_candidates)
 
     logger.info("Running predictions on train split (sanity check)...")
     train_preds = model.predict(
-        users, train, movies_enriched,
+        users, user_based_temporal_train, movies_enriched,
         k=args.k, n_candidates=args.n_candidates,
     )
 
@@ -108,8 +108,8 @@ def main() -> None:
     logger.info("Evaluating on eval split...")
     metrics = evaluate(
         model=model,
-        train_ratings=train,
-        test_ratings=val,
+        train_ratings=user_based_temporal_train,
+        test_ratings=user_based_temporal_val,
         users=users,
         movies=movies_enriched,
         k=args.k,
