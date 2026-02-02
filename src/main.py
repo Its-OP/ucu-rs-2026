@@ -64,5 +64,5 @@ if __name__ == "__main__":
         threshold=4.0,
         n_candidates=200,
         scoring="similarity",
-        metric='euclidean',
+        metric='pearson',
     )

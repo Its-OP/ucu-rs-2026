@@ -1,8 +1,11 @@
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from sklearn.decomposition import PCA
 
 _DATA_DIR = f'{Path(__file__).parent}/datasets'
+
+PCA_DIM = 400
 
 movies = pd.read_csv(f'{_DATA_DIR}/movies.dat',
                      sep='::',
@@ -12,7 +15,9 @@ movies = pd.read_csv(f'{_DATA_DIR}/movies.dat',
 
 movies_enriched = pd.read_csv(f'{_DATA_DIR}/movies_enriched.csv')
 embeddings = np.load(f'{_DATA_DIR}/embeddings.npz')
-movies_enriched['embedding'] = list(embeddings['weighted'])
+_raw = embeddings['concat']
+_reduced = PCA(n_components=PCA_DIM).fit_transform(_raw).astype('float32')
+movies_enriched['embedding'] = list(_reduced)
 
 users = pd.read_csv(f'{_DATA_DIR}/users.dat',
                     sep='::',
