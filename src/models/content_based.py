@@ -24,13 +24,15 @@ class ContentBasedRecommender(RecommenderModel):
                  min_ratings: int = 100,
                  scoring: Literal["similarity", "mean_rating", "hybrid", "popular"] = "similarity",
                  metric: Literal["cosine", "pearson"] = "cosine",
-                 beta: float = 0.8):
+                 beta: float = 0.8,
+                 recency_decay: float = 0.0):
         self.relevance_threshold = relevance_threshold
         self.min_liked = min_liked
         self.min_ratings = min_ratings
         self.scoring = scoring
         self.metric = metric
         self.beta = beta
+        self.recency_decay = recency_decay
 
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
@@ -97,7 +99,11 @@ class ContentBasedRecommender(RecommenderModel):
             liked_weights = []
             watched = set()
 
-            for _, row in group.iterrows():
+            # Sort chronologically so we can assign recency positions
+            sorted_group = group.sort_values("Timestamp")
+            n_ratings = len(sorted_group)
+
+            for rank, (_, row) in enumerate(sorted_group.iterrows()):
                 movie_id = row["MovieID"]
                 if movie_id in self.movie_id_to_idx:
                     watched.add(movie_id)
@@ -107,7 +113,19 @@ class ContentBasedRecommender(RecommenderModel):
                         # Non-linear weight: floor at 0.3, then square so
                         # 5-star (w=1.0) contributes ~3.3× more than 4.1-star (w=0.3)
                         raw_w = max(0.3, row["Rating"] - self.relevance_threshold)
-                        liked_weights.append(raw_w ** 2)
+                        rating_w = raw_w ** 2
+
+                        # Recency: exponential decay based on how far back
+                        # this rating is from the user's most recent one.
+                        # age_frac=0 for the newest, =1 for the oldest.
+                        # decay=0 disables recency (all weights = 1).
+                        if self.recency_decay > 0 and n_ratings > 1:
+                            age_frac = 1.0 - rank / (n_ratings - 1)
+                            recency_w = np.exp(-self.recency_decay * age_frac)
+                        else:
+                            recency_w = 1.0
+
+                        liked_weights.append(rating_w * recency_w)
 
             self.user_watched[user_id] = watched
 
