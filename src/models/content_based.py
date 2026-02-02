@@ -22,13 +22,15 @@ class ContentBasedRecommender(RecommenderModel):
                  relevance_threshold: float = 4,
                  min_liked: int = 5,
                  min_ratings: int = 100,
-                 scoring: Literal["similarity", "mean_rating", "popular"] = "similarity",
-                 metric: Literal["cosine", "pearson"] = "cosine"):
+                 scoring: Literal["similarity", "mean_rating", "hybrid", "popular"] = "similarity",
+                 metric: Literal["cosine", "pearson"] = "cosine",
+                 beta: float = 0.8):
         self.relevance_threshold = relevance_threshold
         self.min_liked = min_liked
         self.min_ratings = min_ratings
         self.scoring = scoring
         self.metric = metric
+        self.beta = beta
 
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
@@ -179,6 +181,17 @@ class ContentBasedRecommender(RecommenderModel):
                 hi = 5.0
                 scored = [
                     (idx, lo + (hi - lo) * max(0.0, sim))
+                    for idx, sim in candidates
+                ]
+            elif self.scoring == "hybrid":
+                # Blend personalised similarity with global mean rating:
+                # score = β * scaled_sim + (1 - β) * mean_rating
+                lo = self.relevance_threshold
+                hi = 5.0
+                scored = [
+                    (idx,
+                     self.beta * (lo + (hi - lo) * max(0.0, sim))
+                     + (1.0 - self.beta) * self.movie_avg.get(self.idx_to_movie_id[idx], lo))
                     for idx, sim in candidates
                 ]
             else:  # mean_rating
