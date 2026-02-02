@@ -33,8 +33,8 @@ def main(
     logger.info("Fitting user profiles on train split...")
     model.fit(train_ratings)
 
-    if scoring == "lambdamart":
-        logger.info("Training LambdaMART re-ranker...")
+    if scoring == "gbr_reranker":
+        logger.info("Training GBR re-ranker...")
         model.train_ranker(train_ratings, n_candidates=50)
 
     logger.info("Running predictions on train split (sanity check)...")
@@ -54,11 +54,10 @@ def main(
         threshold=threshold,
     )
 
-    logger.info("Done.")
-    print("\n=== Evaluation ===")
-    print(f"NDCG@{k}:      {metrics.ndcg:.5f}")
-    print(f"Precision@{k}: {metrics.precision:.5f}")
-    print(f"Recall@{k}:    {metrics.recall:.5f}")
+    logger.info("=== Evaluation ===")
+    logger.info("NDCG@%d:      %.5f", k, metrics.ndcg)
+    logger.info("Precision@%d: %.5f", k, metrics.precision)
+    logger.info("Recall@%d:    %.5f", k, metrics.recall)
 
 
 if __name__ == "__main__":
@@ -70,7 +69,7 @@ if __name__ == "__main__":
         k=10,
         threshold=4.0,
         n_candidates=200,
-        scoring="lambdamart",
+        scoring="gbr_reranker",
         metric="pearson",
         beta=0.9,
         recency_decay=1.3,
