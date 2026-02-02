@@ -21,10 +21,11 @@ def main(
     metric: str = "cosine",
     beta: float = 0.8,
     recency_decay: float = 0.0,
+    n_neighbors: int = 0,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    model = ContentBasedRecommender(relevance_threshold=threshold, scoring=scoring, metric=metric, beta=beta, recency_decay=recency_decay)
+    model = ContentBasedRecommender(relevance_threshold=threshold, scoring=scoring, metric=metric, beta=beta, recency_decay=recency_decay, n_neighbors=n_neighbors)
 
     logger.info("Loading movie embeddings and building FAISS index...")
     model.load(movies)
@@ -62,11 +63,12 @@ if __name__ == "__main__":
         eval_ratings=val,
         users=users,
         movies=movies_enriched,
-        k=10,
+        k=12,
         threshold=4.0,
         n_candidates=200,
         scoring="hybrid",
-        metric='pearson',
+        metric="pearson",
         beta=0.9,
         recency_decay=1.3,
+        n_neighbors=10,
     )

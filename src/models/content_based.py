@@ -25,7 +25,8 @@ class ContentBasedRecommender(RecommenderModel):
                  scoring: Literal["similarity", "mean_rating", "hybrid", "popular"] = "similarity",
                  metric: Literal["cosine", "pearson"] = "cosine",
                  beta: float = 0.8,
-                 recency_decay: float = 0.0):
+                 recency_decay: float = 0.0,
+                 n_neighbors: int = 0):
         self.relevance_threshold = relevance_threshold
         self.min_liked = min_liked
         self.min_ratings = min_ratings
@@ -33,6 +34,7 @@ class ContentBasedRecommender(RecommenderModel):
         self.metric = metric
         self.beta = beta
         self.recency_decay = recency_decay
+        self.n_neighbors = n_neighbors
 
         # Set by .load()
         self.index: faiss.IndexFlatIP | None = None
@@ -140,6 +142,31 @@ class ContentBasedRecommender(RecommenderModel):
                 profile = profile.reshape(1, -1).astype("float32")
                 faiss.normalize_L2(profile)
                 self.user_profiles[user_id] = profile
+
+        # Neighbor-based profile enrichment: average the user's profile
+        # with their K nearest-neighbor profiles (equal weight for all,
+        # including the user themselves).
+        # This injects a lightweight collaborative filtering signal.
+        if self.n_neighbors > 0 and len(self.user_profiles) > self.n_neighbors:
+            user_ids = list(self.user_profiles.keys())
+            profile_matrix = np.vstack(
+                [self.user_profiles[uid] for uid in user_ids]
+            ).astype("float32")                        # (n_users, dim)
+
+            # Build a temporary FAISS index over user profiles
+            dim = profile_matrix.shape[1]
+            user_index = faiss.IndexFlatIP(dim)
+            user_index.add(profile_matrix)
+
+            # Query: K+1 neighbors (includes the user itself)
+            sims, idxs = user_index.search(profile_matrix, self.n_neighbors + 1)
+
+            for i, uid in enumerate(user_ids):
+                # Average user + all K neighbors (self is included in results)
+                group_profiles = profile_matrix[idxs[i]]  # (K+1, dim)
+                enriched = group_profiles.mean(axis=0).reshape(1, -1).astype("float32")
+                faiss.normalize_L2(enriched)
+                self.user_profiles[uid] = enriched
 
         return self
 
