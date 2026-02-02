@@ -41,17 +41,17 @@ Random splitting violates the temporal structure of the data. A random split wou
 We use a **global-timestamp temporal split** with three contiguous, non-overlapping windows:
 
 ```
-Timeline: Apr 2000 ──────────────────────────────────── Feb 2003
-          │           TRAIN           │   VAL   │  TEST  │
-          │        (~80%)             │ (~10%)  │ (~10%) │
-          ◄──────────────────────────►◄────────►◄───────►
+Timeline: Apr 2000 ───────────────────────────────────────── Feb 2003
+          │           TRAIN           │   VAL      │  TEST    │
+          │        (~75%)             │ (~12.5%)   │ (~12.5%) │
+          ◄──────────────────────────►◄────────────►◄─────────►
                                      t_1       t_2
 ```
 
 **Procedure:**
 
 1. Sort all 1,000,209 ratings by timestamp.
-2. Choose cutoff timestamps `t_1` and `t_2` such that approximately 80% / 10% / 10% of ratings fall into train / validation / test.
+2. Choose cutoff timestamps `t_1` and `t_2` such that approximately 75% / 12.5% / 12.5% of ratings fall into train / validation / test.
 3. Assign each rating to a split based solely on its timestamp:
    - **Train**: `timestamp < t_1`
    - **Validation**: `t_1 <= timestamp < t_2`
@@ -193,7 +193,7 @@ These breakdowns are not separate metrics — they are the same NDCG@K / Precisi
 | Aspect | Decision | Justification |
 |---|---|---|
 | **Paradigm** | Ranking | Matches deployment task; robust to selection bias (MNAR) |
-| **Split** | Temporal (80/10/10 by timestamp) | Prevents temporal leakage; reflects real-world chronology |
+| **Split** | Temporal (75/12.5/12.5 by timestamp) | Prevents temporal leakage; reflects real-world chronology |
 | **Relevance** | Graded (1–5) for NDCG; binary (>= 4) for Precision/Recall | NDCG preserves ordinal information; binary threshold separates genuine positive signal from lukewarm (mean 3.58) |
 | **Primary metric** | NDCG@10 (graded) | Position-aware ranking quality with full ordinal sensitivity |
 | **Secondary metrics** | Precision@10, Recall@10 | List purity and preference coverage |
