@@ -70,7 +70,9 @@ def evaluate(
         ranked_item_ids = np.array([r.movie_id for r in rated_items])
 
         ndcg = ndcg_at_k(ranked_item_ids, true_ratings, k=k)
-        precision = precision_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold)
+        precision = precision_at_k(
+            ranked_item_ids, true_ratings, k=k, threshold=threshold
+        )
         recall = recall_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold)
 
         if precision is None or recall is None:
@@ -84,7 +86,8 @@ def evaluate(
     if n_skipped > 0:
         logger.warning(
             "Skipped %d/%d users with no relevant items in test set",
-            n_skipped, len(predictions),
+            n_skipped,
+            len(predictions),
         )
 
     return Metrics(
