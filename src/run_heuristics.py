@@ -6,6 +6,7 @@ Usage examples
 --------------
 Popularity heuristics:
     python -m src.run_heuristics --model count
+    python -m src.run_heuristics --model mean_rating --mean-min-count 5
     python -m src.run_heuristics --model bayesian --bayesian-m 50
     python -m src.run_heuristics --model recency --half-life-days 14
 
@@ -38,6 +39,7 @@ from src.models.graph import (
 )
 from src.models.popularity import (
     BayesianPopularityRanker,
+    MeanRatingRanker,
     PopularityRanker,
     RecencyPopularityRanker,
 )
@@ -54,9 +56,18 @@ def parse_args() -> argparse.Namespace:
         "--model",
         type=str,
         default="count",
-        choices=["count", "bayesian", "recency", "item_graph", "pagerank", "ppr"],
+        choices=[
+            "count",
+            "mean_rating",
+            "bayesian",
+            "recency",
+            "item_graph",
+            "pagerank",
+            "ppr",
+        ],
         help=(
-            "Heuristic model variant: popularity (count/bayesian/recency) "
+            "Heuristic model variant: popularity "
+            "(count/mean_rating/bayesian/recency) "
             "or graph (item_graph/pagerank/ppr)."
         ),
     )
@@ -104,6 +115,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=25.0,
         help="Pseudo-count strength for Bayesian popularity model.",
+    )
+    parser.add_argument(
+        "--mean-min-count",
+        type=float,
+        default=1.0,
+        help="Minimum weighted support for mean_rating popularity model.",
     )
     parser.add_argument(
         "--half-life-days",
@@ -159,6 +176,8 @@ def parse_args() -> argparse.Namespace:
 def build_model(args: argparse.Namespace):
     if args.model == "count":
         return PopularityRanker()
+    if args.model == "mean_rating":
+        return MeanRatingRanker(min_count=args.mean_min_count)
     if args.model == "bayesian":
         return BayesianPopularityRanker(bayesian_m=args.bayesian_m)
     if args.model == "recency":

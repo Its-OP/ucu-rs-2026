@@ -157,6 +157,24 @@ class PopularityRanker(PopularityBase):
         return weighted_count.astype(float)
 
 
+class MeanRatingRanker(PopularityBase):
+    """Rank items by weighted mean rating with optional minimum support."""
+
+    def __init__(self, min_count: float = 1.0) -> None:
+        super().__init__()
+        self.min_count = float(min_count)
+
+    def _score_items(
+        self,
+        weighted_count: pd.Series,
+        weighted_mean: pd.Series,
+        work: pd.DataFrame,
+    ) -> pd.Series:
+        del work
+        mask = weighted_count >= self.min_count
+        return weighted_mean[mask].astype(float)
+
+
 class BayesianPopularityRanker(PopularityBase):
     """Rank items by Bayesian-smoothed weighted mean rating."""
 

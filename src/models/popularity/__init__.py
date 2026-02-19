@@ -1,5 +1,6 @@
 from .ranker import (
     BayesianPopularityRanker,
+    MeanRatingRanker,
     PopularityBase,
     PopularityRanker,
     RecencyPopularityRanker,
@@ -8,6 +9,7 @@ from .ranker import (
 __all__ = [
     "PopularityBase",
     "PopularityRanker",
+    "MeanRatingRanker",
     "BayesianPopularityRanker",
     "RecencyPopularityRanker",
 ]

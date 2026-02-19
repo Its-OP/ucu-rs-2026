@@ -56,7 +56,6 @@ class HeuristicRanker(RecommenderModel, ABC):
         if valid_k == 0:
             return []
 
-        # argpartition expects zero-based k-th position.
         top_idx = np.argpartition(-work_scores, valid_k - 1)[:valid_k]
         top_idx = top_idx[np.argsort(-work_scores[top_idx])]
 

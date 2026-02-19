@@ -6,6 +6,7 @@ from src.models.graph import (
 )
 from src.models.popularity import (
     BayesianPopularityRanker,
+    MeanRatingRanker,
     PopularityBase,
     PopularityRanker,
     RecencyPopularityRanker,
@@ -19,6 +20,7 @@ __all__ = [
     "PersonalizedPageRankRanker",
     "PopularityBase",
     "PopularityRanker",
+    "MeanRatingRanker",
     "BayesianPopularityRanker",
     "RecencyPopularityRanker",
 ]
