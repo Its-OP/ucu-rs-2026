@@ -22,6 +22,7 @@ class MetricsAtK:
     precision: float
     recall: float
     mrr: float
+    map: float
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -81,6 +82,54 @@ def mrr_at_k(
     return 0.0, True
 
 
+def map_at_k(
+    ranked_item_ids: np.ndarray,
+    true_ratings: Dict[int, float],
+    k: int,
+    threshold: float,
+) -> float:
+    """Compute Average Precision at K for a single user.
+
+    Parameters
+    ----------
+    ranked_item_ids : np.ndarray
+        Ranked item identifiers returned by the model (best first).
+    true_ratings : dict[int, float]
+        Ground-truth ratings for the user (item_id -> rating).
+    k : int
+        Cut-off position.
+    threshold : float
+        Binary relevance threshold (rating >= threshold is relevant).
+
+    Returns
+    -------
+    float
+        AP@K for the user. Returns 0.0 if the user has no relevant items under
+        ``threshold``.
+
+    Notes
+    -----
+    AP@K is computed as:
+    - precision at each rank where a relevant item appears in top-K,
+    - averaged by ``min(number_of_relevant_items, K)``.
+    """
+    relevant = {iid for iid, r in true_ratings.items() if r >= threshold}
+    if not relevant:
+        return 0.0
+    
+    topk = ranked_item_ids[:k]
+    hits = 0
+    ap = 0.0
+    for rank, iid in enumerate(topk, start=1):
+        if int(iid) in relevant:
+            hits += 1
+            ap += hits / rank
+    denom = min(len(relevant), k)
+    if denom <= 0:
+        return 0.0
+    return ap / denom
+
+
 def _compute_warm_cold_users(
     users_df: pd.DataFrame,
     train_ratings: pd.DataFrame,
@@ -137,7 +186,7 @@ def evaluate(
 
     This evaluator extends the basic offline protocol with:
     - multiple cut-offs (K values),
-    - additional ranking metric (MRR@K),
+    - additional ranking metrics (MRR@K and MAP@K),
     - warm-users evaluation mode,
     - user accounting (how many users were eligible/evaluated),
     - coverage statistics (whether the model returns enough recommendations).
@@ -158,7 +207,7 @@ def evaluate(
     ks : Iterable[int], default=(10, 20)
         Cut-off positions for all metrics. The model is asked for ``max(ks)`` recommendations.
     threshold : float, default=4.0
-        Binary relevance threshold for Precision@K, Recall@K, and MRR@K
+        Binary relevance threshold for Precision@K, Recall@K, MRR@K, and MAP@K
         (items with rating >= threshold are treated as relevant).
     mode : {"all", "warm_only"}, default="all"
         Evaluation user subset:
@@ -176,7 +225,7 @@ def evaluate(
     -------
     EvalReport
         Evaluation report containing:
-        - aggregated metrics per K (NDCG@K, Precision@K, Recall@K, MRR@K),
+        - aggregated metrics per K (NDCG@K, Precision@K, Recall@K, MRR@K, MAP@K),
         - user counts (total/with ground truth/eligible/evaluated),
         - skip rate (users skipped due to having no relevant items in the test set),
         - coverage statistics,
@@ -236,6 +285,7 @@ def evaluate(
     precision_scores: Dict[int, list] = {k: [] for k in ks}
     recall_scores: Dict[int, list] = {k: [] for k in ks}
     mrr_scores: Dict[int, list] = {k: [] for k in ks}
+    map_scores: Dict[int, list] = {k: [] for k in ks}
 
     list_sizes = []
     n_users_with_min_k = 0
@@ -267,6 +317,7 @@ def evaluate(
             mr, eligible = mrr_at_k(
                 ranked_item_ids, true_ratings, k=k, threshold=threshold
             )
+            mp = map_at_k(ranked_item_ids, true_ratings, k=k, threshold=threshold)
 
             if pr is None or rc is None or not eligible:
                 n_skipped += 1
@@ -276,6 +327,7 @@ def evaluate(
             precision_scores[k].append(float(pr))
             recall_scores[k].append(float(rc))
             mrr_scores[k].append(float(mr))
+            map_scores[k].append(float(mp))
         else:
             n_evaluated += 1
 
@@ -301,6 +353,7 @@ def evaluate(
             ),
             recall=float(np.mean(recall_scores[k])) if recall_scores[k] else 0.0,
             mrr=float(np.mean(mrr_scores[k])) if mrr_scores[k] else 0.0,
+            map=float(np.mean(map_scores[k])) if map_scores[k] else 0.0,
         )
 
     return EvalReport(

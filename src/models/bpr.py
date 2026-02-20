@@ -328,7 +328,6 @@ class BPRRecommender(RecommenderModel):
                 u_idx = self.user_to_idx[uid]
                 scores = item_bias + (item_factors @ self.user_factors[u_idx])
             else:
-                # Cold user fallback: global popularity prior
                 scores = self._global_popularity_scores[candidate_indices].astype(np.float32)
 
             work_scores = scores.astype(np.float64, copy=True)
