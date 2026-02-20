@@ -8,6 +8,8 @@ import pandas as pd
 from src.eval.metrics.ndcg import ndcg_at_k
 from src.eval.metrics.precision import precision_at_k
 from src.eval.metrics.recall import recall_at_k
+from src.eval.metrics.mrr import mrr_at_k
+from src.eval.metrics.map import map_at_k
 from src.models.base import RecommenderModel
 
 logger = logging.getLogger(__name__)
@@ -44,90 +46,6 @@ class EvalReport:
     n_warm_users: int
     n_cold_users: int
     cold_user_rate: float
-
-
-def mrr_at_k(
-    ranked_item_ids: np.ndarray,
-    true_ratings: Dict[int, float],
-    k: int,
-    threshold: float,
-) -> Tuple[float, bool]:
-    """Compute reciprocal rank at K for a single user.
-
-    Parameters
-    ----------
-    ranked_item_ids : np.ndarray
-        Ranked item identifiers returned by the model (best first).
-    true_ratings : dict[int, float]
-        Ground-truth ratings for the user (item_id -> rating).
-    k : int
-        Cut-off position.
-    threshold : float
-        Binary relevance threshold (rating >= threshold is relevant).
-
-    Returns
-    -------
-    tuple[float, bool]
-        Reciprocal rank value and an eligibility flag. If the user has no relevant items
-        in ground truth under ``threshold``, returns (0.0, False).
-    """
-    relevant = {iid for iid, r in true_ratings.items() if r >= threshold}
-    if not relevant:
-        return 0.0, False
-
-    topk = ranked_item_ids[:k]
-    for rank, iid in enumerate(topk, start=1):
-        if int(iid) in relevant:
-            return 1.0 / rank, True
-    return 0.0, True
-
-
-def map_at_k(
-    ranked_item_ids: np.ndarray,
-    true_ratings: Dict[int, float],
-    k: int,
-    threshold: float,
-) -> float:
-    """Compute Average Precision at K for a single user.
-
-    Parameters
-    ----------
-    ranked_item_ids : np.ndarray
-        Ranked item identifiers returned by the model (best first).
-    true_ratings : dict[int, float]
-        Ground-truth ratings for the user (item_id -> rating).
-    k : int
-        Cut-off position.
-    threshold : float
-        Binary relevance threshold (rating >= threshold is relevant).
-
-    Returns
-    -------
-    float
-        AP@K for the user. Returns 0.0 if the user has no relevant items under
-        ``threshold``.
-
-    Notes
-    -----
-    AP@K is computed as:
-    - precision at each rank where a relevant item appears in top-K,
-    - averaged by ``min(number_of_relevant_items, K)``.
-    """
-    relevant = {iid for iid, r in true_ratings.items() if r >= threshold}
-    if not relevant:
-        return 0.0
-    
-    topk = ranked_item_ids[:k]
-    hits = 0
-    ap = 0.0
-    for rank, iid in enumerate(topk, start=1):
-        if int(iid) in relevant:
-            hits += 1
-            ap += hits / rank
-    denom = min(len(relevant), k)
-    if denom <= 0:
-        return 0.0
-    return ap / denom
 
 
 def _compute_warm_cold_users(
