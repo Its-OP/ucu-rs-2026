@@ -1,4 +1,5 @@
 from src.models.base import RecommenderModel, Rating
+from src.models.bpr import BPRRecommender
 from src.models.graph import (
     ItemGraphPropagationRanker,
     PageRankRanker,
@@ -15,6 +16,7 @@ from src.models.popularity import (
 __all__ = [
     "RecommenderModel",
     "Rating",
+    "BPRRecommender",
     "ItemGraphPropagationRanker",
     "PageRankRanker",
     "PersonalizedPageRankRanker",
