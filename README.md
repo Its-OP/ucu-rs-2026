@@ -23,14 +23,19 @@ ucu-rs-2026/
 │   │   ├── content_based.py    # Content-based recommender (FAISS + GBR re-ranker)
 │   │   ├── collaborative_filtering.py  # Item-Item CF (cosine/adjusted cosine/pearson)
 │   │   ├── als.py              # ALS
-│   │   └── func_svd.py         # FunkSVD
+│   │   ├── func_svd.py         # FunkSVD
+│   │   └── ANN/two_towers/     # Two-tower transformer recommender
+│   │       ├── item_tower.py   # Item projection MLP (SentenceBERT → shared space)
+│   │       ├── user_tower.py   # Transformer user encoder (history + demographics)
+│   │       └── two_tower_transformer.py  # Main model (RecommenderModel subclass)
 │   ├── eval/
 │   │   ├── eval.py             # Evaluation harness (NDCG@K, Precision@K, Recall@K)
 │   │   └── metrics/            # Individual metric implementations
 │   │       ├── ndcg.py
 │   │       ├── precision.py
 │   │       └── recall.py
-│   └── run_content_based.py    # CLI entry point for content-based model
+│   ├── run_content_based.py    # CLI entry point for content-based model
+│   └── train_two_tower_transformer.py  # Training script for two-tower model
 │
 ├── experiments/
 │   ├── ALS/                    # ALS notebook + results
@@ -102,6 +107,26 @@ Available scoring strategies: `similarity`, `mean_rating`, `hybrid`, `popular`, 
 
 Available similarity metrics: `cosine`, `pearson`
 
+### Two-Tower Transformer
+
+```bash
+# Train with default hyperparameters (30 epochs)
+python -m src.train_two_tower_transformer
+
+# Quick smoke test
+python -m src.train_two_tower_transformer --number-of-epochs 2 \
+    --evaluation-interval 1 --batch-size 64
+
+# Custom hyperparameters
+python -m src.train_two_tower_transformer --number-of-epochs 50 \
+    --learning-rate 5e-4 --temperature 0.07
+
+# See all options
+python -m src.train_two_tower_transformer --help
+```
+
+Training creates a run directory under `./runs/` with checkpoints, a training log, and a Markdown evaluation report.
+
 ### Collaborative filtering experiments
 
 Experiments are run via Jupyter notebooks in the `experiments/` directory:
@@ -122,6 +147,7 @@ pytest tests/
 
 | Model | Type | Best NDCG@10 | Details |
 |-------|------|-------------|---------|
+| Two-Tower Transformer | ANN / Deep Learning | TBD | Self-attention user tower + SentenceBERT item projection |
 | Content-Based + GBR | Content-based | 0.128 | FAISS retrieval + GradientBoostingRegressor re-ranker |
 | FunkSVD | Matrix factorisation | 0.091 | 50 factors, lr=0.01, reg=0.02 |
 | ALS | Matrix factorisation | 0.035 | 200 factors, reg=0.1 |

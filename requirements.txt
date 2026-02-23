@@ -10,3 +10,4 @@ faiss-cpu~=1.13.2
 scikit-learn~=1.8.0
 sentence-transformers~=5.2.2
 lightgbm
+torch>=2.0.0

@@ -12,6 +12,7 @@ from src.models.popularity import (
     PopularityRanker,
     RecencyPopularityRanker,
 )
+from src.models.ANN.two_towers import TwoTowerTransformerRecommender
 
 __all__ = [
     "RecommenderModel",
@@ -25,4 +26,5 @@ __all__ = [
     "MeanRatingRanker",
     "BayesianPopularityRanker",
     "RecencyPopularityRanker",
+    "TwoTowerTransformerRecommender",
 ]
