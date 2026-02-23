@@ -19,6 +19,7 @@ from src.models.bandit.simulation import run_bandit_simulation
 from src.models.bandit.strategy import (
     ArmStatistics,
     EpsilonGreedyStrategy,
+    ThompsonSamplingStrategy,
 )
 
 
@@ -238,6 +239,233 @@ class TestEpsilonGreedyStrategy:
         # All arms have 0 mean (no updates yet) -> tie -> random selection
         selections = {strategy.select_arm() for _ in range(100)}
         assert len(selections) > 1, "Tie-breaking should produce varied selections"
+
+
+class TestThompsonSamplingStrategy:
+    def test_raises_on_invalid_reward_threshold(self):
+        with pytest.raises(ValueError, match="reward_threshold must be in"):
+            ThompsonSamplingStrategy(reward_threshold=-0.1)
+        with pytest.raises(ValueError, match="reward_threshold must be in"):
+            ThompsonSamplingStrategy(reward_threshold=1.5)
+
+    def test_raises_on_invalid_prior_alpha(self):
+        with pytest.raises(ValueError, match="prior_alpha must be > 0"):
+            ThompsonSamplingStrategy(prior_alpha=0.0)
+        with pytest.raises(ValueError, match="prior_alpha must be > 0"):
+            ThompsonSamplingStrategy(prior_alpha=-1.0)
+
+    def test_raises_on_invalid_prior_beta(self):
+        with pytest.raises(ValueError, match="prior_beta must be > 0"):
+            ThompsonSamplingStrategy(prior_beta=0.0)
+
+    def test_raises_on_invalid_number_of_arms(self):
+        strategy = ThompsonSamplingStrategy()
+        with pytest.raises(ValueError, match="number_of_arms must be >= 1"):
+            strategy.initialize(number_of_arms=0)
+
+    def test_select_arm_raises_if_not_initialized(self):
+        strategy = ThompsonSamplingStrategy()
+        with pytest.raises(RuntimeError, match="not initialized"):
+            strategy.select_arm()
+
+    def test_initialize_resets_state(self):
+        strategy = ThompsonSamplingStrategy(random_state=42)
+        strategy.initialize(number_of_arms=2)
+        strategy.update(chosen_arm=0, reward=1.0)
+
+        # Re-initialize should clear the previous state
+        strategy.initialize(number_of_arms=3)
+        statistics = strategy.get_arm_statistics()
+        assert len(statistics) == 3
+        assert all(arm.pull_count == 0 for arm in statistics)
+        assert all(arm.reward_sum == 0.0 for arm in statistics)
+
+    def test_both_arms_selected_with_uniform_prior(self):
+        """With uniform prior Beta(1,1) and no updates, both arms should
+        be selected over many draws since samples are from Uniform(0,1)."""
+        strategy = ThompsonSamplingStrategy(random_state=42)
+        strategy.initialize(number_of_arms=2)
+
+        selections = [strategy.select_arm() for _ in range(200)]
+        unique_arms = set(selections)
+        assert unique_arms == {0, 1}, (
+            f"Expected both arms selected with uniform prior, got {unique_arms}"
+        )
+
+    def test_learns_to_prefer_rewarded_arm(self):
+        """After many successes on arm 0 and failures on arm 1,
+        Thompson Sampling should strongly prefer arm 0."""
+        strategy = ThompsonSamplingStrategy(
+            reward_threshold=0.0, random_state=42,
+        )
+        strategy.initialize(number_of_arms=2)
+
+        # Feed many successes to arm 0 and failures to arm 1
+        for _ in range(50):
+            strategy.update(chosen_arm=0, reward=0.8)  # success
+            strategy.update(chosen_arm=1, reward=0.0)  # failure
+
+        # After strong evidence, arm 0 should be selected most of the time
+        selections = [strategy.select_arm() for _ in range(100)]
+        arm_0_count = selections.count(0)
+        assert arm_0_count > 90, (
+            f"Expected arm 0 selected >90 times, got {arm_0_count}"
+        )
+
+    def test_binarization_at_threshold(self):
+        """Rewards at or below threshold are failures; strictly above are successes.
+
+        With threshold=0.5:
+          - reward 0.5 -> failure (at threshold, not above it)
+          - reward 0.51 -> success (above threshold)
+          - reward 0.4 -> failure (below threshold)
+        """
+        strategy = ThompsonSamplingStrategy(
+            reward_threshold=0.5, random_state=42,
+        )
+        strategy.initialize(number_of_arms=2)
+
+        # Arm 0 always gets rewards above threshold (success)
+        # Arm 1 always gets rewards at threshold (failure — strict inequality)
+        for _ in range(50):
+            strategy.update(chosen_arm=0, reward=0.6)  # success (> 0.5)
+            strategy.update(chosen_arm=1, reward=0.5)  # failure (= 0.5, not >)
+
+        # Arm 0 should be strongly preferred
+        selections = [strategy.select_arm() for _ in range(100)]
+        arm_0_count = selections.count(0)
+        assert arm_0_count > 90, (
+            f"Expected arm 0 selected >90 times, got {arm_0_count}"
+        )
+
+    def test_update_increments_counts_and_sums(self):
+        strategy = ThompsonSamplingStrategy(random_state=42)
+        strategy.initialize(number_of_arms=2)
+
+        strategy.update(chosen_arm=0, reward=0.5)
+        strategy.update(chosen_arm=0, reward=0.3)
+        strategy.update(chosen_arm=1, reward=0.8)
+
+        statistics = strategy.get_arm_statistics()
+        assert statistics[0].pull_count == 2
+        assert statistics[0].reward_sum == pytest.approx(0.8)
+        assert statistics[0].mean_reward == pytest.approx(0.4)
+        assert statistics[1].pull_count == 1
+        assert statistics[1].reward_sum == pytest.approx(0.8)
+
+    def test_get_arm_statistics_returns_copy(self):
+        """Modifying returned statistics should not affect internal state."""
+        strategy = ThompsonSamplingStrategy(random_state=42)
+        strategy.initialize(number_of_arms=2)
+        strategy.update(chosen_arm=0, reward=0.5)
+
+        statistics = strategy.get_arm_statistics()
+        statistics[0].pull_count = 999
+
+        fresh_statistics = strategy.get_arm_statistics()
+        assert fresh_statistics[0].pull_count == 1  # unchanged
+
+    def test_informative_prior_biases_initial_selection(self):
+        """A strong prior alpha on arm selection should bias early pulls."""
+        # Prior strongly favoring successes: Beta(10, 1) → mean ≈ 0.91
+        strategy = ThompsonSamplingStrategy(
+            prior_alpha=10.0, prior_beta=1.0, random_state=42,
+        )
+        strategy.initialize(number_of_arms=2)
+
+        # With symmetric strong prior, both arms start equally.
+        # Arm 0 gets failures, arm 1 gets successes → arm 1 eventually wins
+        for _ in range(30):
+            strategy.update(chosen_arm=0, reward=0.0)
+            strategy.update(chosen_arm=1, reward=1.0)
+
+        selections = [strategy.select_arm() for _ in range(100)]
+        arm_1_count = selections.count(1)
+        assert arm_1_count > 80, (
+            f"Expected arm 1 preferred after evidence, got {arm_1_count}"
+        )
+
+    def test_works_in_simulation(
+        self, sample_users, sample_movies, sample_train_ratings, sample_test_ratings
+    ):
+        """Thompson Sampling strategy should work with the simulation loop."""
+        perfect = PerfectModel(sample_test_ratings)
+        bad = BadModel(bad_movie_ids=[60, 70])
+        strategy = ThompsonSamplingStrategy(
+            reward_threshold=0.0, random_state=42,
+        )
+
+        report = run_bandit_simulation(
+            arms=[perfect, bad],
+            arm_names=["Perfect", "Bad"],
+            strategy=strategy,
+            train_ratings=sample_train_ratings,
+            evaluation_ratings=sample_test_ratings,
+            users=sample_users,
+            movies=sample_movies,
+            k=2,
+            relevance_threshold=4.0,
+        )
+
+        # Basic sanity: report should complete and have processed users
+        assert report.total_users_processed > 0
+        total_selections = sum(report.per_arm_selection_count.values())
+        assert total_selections == report.total_users_processed
+
+    def test_bandit_learns_better_arm_thompson(
+        self, sample_users, sample_movies, sample_train_ratings,
+    ):
+        """Over many users, Thompson Sampling should learn to prefer the
+        better arm, similar to the epsilon-greedy test."""
+        many_users = pd.DataFrame(
+            {
+                "UserID": list(range(1, 101)),
+                "Gender": ["M"] * 100,
+                "Age": [25] * 100,
+                "Occupation": [0] * 100,
+                "Zip-code": ["00000"] * 100,
+            }
+        )
+        many_test_ratings_rows = []
+        for uid in range(1, 101):
+            many_test_ratings_rows.append(
+                {"UserID": uid, "MovieID": 30, "Rating": 5.0,
+                 "Timestamp": pd.Timestamp("2000-12-01") + pd.Timedelta(days=uid)}
+            )
+            many_test_ratings_rows.append(
+                {"UserID": uid, "MovieID": 40, "Rating": 4.0,
+                 "Timestamp": pd.Timestamp("2000-12-02") + pd.Timedelta(days=uid)}
+            )
+        many_test_ratings = pd.DataFrame(many_test_ratings_rows)
+
+        many_train_ratings = pd.DataFrame(
+            {
+                "UserID": list(range(1, 101)),
+                "MovieID": [10] * 100,
+                "Rating": [3.0] * 100,
+                "Timestamp": pd.to_datetime(["2000-06-01"] * 100),
+            }
+        )
+
+        perfect = PerfectModel(many_test_ratings)
+        bad = BadModel(bad_movie_ids=[60, 70])
+        strategy = ThompsonSamplingStrategy(
+            reward_threshold=0.0, random_state=42,
+        )
+
+        report = run_bandit_simulation(
+            arms=[perfect, bad],
+            arm_names=["Perfect", "Bad"],
+            strategy=strategy,
+            train_ratings=many_train_ratings,
+            evaluation_ratings=many_test_ratings,
+            users=many_users,
+            movies=sample_movies,
+            k=2,
+            relevance_threshold=4.0,
+        )
+
+        assert report.per_arm_selection_count["Perfect"] > report.per_arm_selection_count["Bad"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

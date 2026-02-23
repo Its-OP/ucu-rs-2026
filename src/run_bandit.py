@@ -32,7 +32,11 @@ from data.dataframes import movies, test, train, users, val
 from src.eval.eval import evaluate as evaluate_basic
 from src.models.bandit.bandit_model_selector import BanditModelSelector
 from src.models.bandit.simulation import BanditSimulationReport, run_bandit_simulation
-from src.models.bandit.strategy import ArmSelectionStrategy, EpsilonGreedyStrategy
+from src.models.bandit.strategy import (
+    ArmSelectionStrategy,
+    EpsilonGreedyStrategy,
+    ThompsonSamplingStrategy,
+)
 from src.models.bpr import BPRRecommender
 from src.models.graph import ItemGraphPropagationRanker
 
@@ -77,8 +81,32 @@ def parse_args() -> argparse.Namespace:
 
     # ── Strategy ──────────────────────────────────────────────────────
     parser.add_argument(
+        "--strategy",
+        type=str,
+        default="epsilon_greedy",
+        choices=["epsilon_greedy", "thompson"],
+        help="Bandit strategy to use (default: epsilon_greedy).",
+    )
+    parser.add_argument(
         "--epsilon", type=float, default=0.1,
         help="Exploration probability for epsilon-greedy (default: 0.1).",
+    )
+
+    # ── Thompson Sampling parameters ─────────────────────────────────
+    parser.add_argument(
+        "--reward-threshold", type=float, default=0.0,
+        help=(
+            "Thompson Sampling: continuous rewards >= this are successes. "
+            "Must be in [0, 1] (default: 0.0, i.e. any positive NDCG is a success)."
+        ),
+    )
+    parser.add_argument(
+        "--prior-alpha", type=float, default=1.0,
+        help="Thompson Sampling: initial Beta prior alpha (default: 1.0).",
+    )
+    parser.add_argument(
+        "--prior-beta", type=float, default=1.0,
+        help="Thompson Sampling: initial Beta prior beta (default: 1.0).",
     )
 
     # ── BPR model parameters ─────────────────────────────────────────
@@ -128,9 +156,21 @@ def parse_args() -> argparse.Namespace:
 def build_strategy(args: argparse.Namespace) -> ArmSelectionStrategy:
     """Create and return the arm selection strategy from CLI arguments.
 
-    Currently only epsilon-greedy is supported.  New strategies can be
-    added here without modifying any other code.
+    Supported strategies:
+
+    - ``epsilon_greedy``: epsilon-greedy exploration/exploitation.
+    - ``thompson``: Thompson Sampling with a Beta-Bernoulli reward model.
+
+    New strategies can be added here without modifying any other code.
     """
+    if args.strategy == "thompson":
+        return ThompsonSamplingStrategy(
+            reward_threshold=args.reward_threshold,
+            prior_alpha=args.prior_alpha,
+            prior_beta=args.prior_beta,
+            random_state=args.seed,
+        )
+    # Default: epsilon-greedy
     return EpsilonGreedyStrategy(epsilon=args.epsilon, random_state=args.seed)
 
 
@@ -323,7 +363,7 @@ def main() -> None:
 
     # ── Phase 2: Build strategy ───────────────────────────────────────
     logger.info("=" * 60)
-    logger.info("Phase 2: Building epsilon-greedy strategy (epsilon=%s)", args.epsilon)
+    logger.info("Phase 2: Building strategy '%s'", args.strategy)
     logger.info("=" * 60)
     strategy = build_strategy(args)
 
@@ -399,8 +439,11 @@ def main() -> None:
     logger.info("=" * 60)
 
     config = {
-        "strategy": "epsilon_greedy",
+        "strategy": args.strategy,
         "epsilon": args.epsilon,
+        "reward_threshold": args.reward_threshold,
+        "prior_alpha": args.prior_alpha,
+        "prior_beta": args.prior_beta,
         "split": args.split,
         "k": args.k,
         "relevance_threshold": args.threshold,

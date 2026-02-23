@@ -8,6 +8,7 @@ from src.models.bandit.strategy import (
     ArmSelectionStrategy,
     ArmStatistics,
     EpsilonGreedyStrategy,
+    ThompsonSamplingStrategy,
 )
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "ArmSelectionStrategy",
     "ArmStatistics",
     "EpsilonGreedyStrategy",
+    "ThompsonSamplingStrategy",
     "BanditSimulationReport",
     "UserDecisionRecord",
     "run_bandit_simulation",
