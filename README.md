@@ -24,6 +24,10 @@ ucu-rs-2026/
 │   │   ├── collaborative_filtering.py  # Item-Item CF (cosine/adjusted cosine/pearson)
 │   │   ├── als.py              # ALS
 │   │   ├── func_svd.py         # FunkSVD
+│   │   ├── bandit/             # Multi-armed bandit model selector
+│   │   │   ├── strategy.py     # ArmSelectionStrategy ABC + EpsilonGreedy
+│   │   │   ├── simulation.py   # Offline replay loop + BanditSimulationReport
+│   │   │   └── bandit_model_selector.py  # BanditModelSelector (RecommenderModel)
 │   │   └── ANN/two_towers/     # Two-tower transformer recommender
 │   │       ├── item_tower.py   # Item projection MLP (SentenceBERT → shared space)
 │   │       ├── user_tower.py   # Transformer user encoder (history + demographics)
@@ -35,6 +39,7 @@ ucu-rs-2026/
 │   │       ├── precision.py
 │   │       └── recall.py
 │   ├── run_content_based.py    # CLI entry point for content-based model
+│   ├── run_bandit.py           # CLI entry point for bandit model selector
 │   └── train_two_tower_transformer.py  # Training script for two-tower model
 │
 ├── experiments/
@@ -127,6 +132,21 @@ python -m src.train_two_tower_transformer --help
 
 Training creates a run directory under `./runs/` with checkpoints, a training log, and a Markdown evaluation report.
 
+### Multi-Armed Bandit Model Selector
+
+Runs an offline replay simulation to test whether BPR and ItemGraph heuristic serve different user cohorts better. The bandit learns per-user which model to prefer using epsilon-greedy exploration. Results are exported to a timestamped run directory under `./runs/`.
+
+```bash
+# Epsilon-greedy on validation split (default)
+python -m src.run_bandit --split val --epsilon 0.1
+
+# On test split with custom BPR epochs
+python -m src.run_bandit --split test --epsilon 0.05 --bpr-n-epochs 30
+
+# See all options
+python -m src.run_bandit --help
+```
+
 ### Collaborative filtering experiments
 
 Experiments are run via Jupyter notebooks in the `experiments/` directory:
@@ -147,6 +167,7 @@ pytest tests/
 
 | Model | Type | Best NDCG@10 | Details |
 |-------|------|-------------|---------|
+| Bandit Model Selector | Meta-learner | TBD | Epsilon-greedy selection between BPR and ItemGraph |
 | Two-Tower Transformer | ANN / Deep Learning | TBD | Self-attention user tower + SentenceBERT item projection |
 | Content-Based + GBR | Content-based | 0.128 | FAISS retrieval + GradientBoostingRegressor re-ranker |
 | FunkSVD | Matrix factorisation | 0.091 | 50 factors, lr=0.01, reg=0.02 |

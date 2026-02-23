@@ -13,11 +13,13 @@ from src.models.popularity import (
     RecencyPopularityRanker,
 )
 from src.models.ANN.two_towers import TwoTowerTransformerRecommender
+from src.models.bandit import BanditModelSelector
 
 __all__ = [
     "RecommenderModel",
     "Rating",
     "BPRRecommender",
+    "BanditModelSelector",
     "ItemGraphPropagationRanker",
     "PageRankRanker",
     "PersonalizedPageRankRanker",
