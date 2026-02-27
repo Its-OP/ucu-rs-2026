@@ -124,7 +124,7 @@ class WideAndDeepRecommender(RecommenderModel):
         self,
         n_epochs: int = 5,
         batch_size: int = 1024,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 3e-4,
         weight_decay: float = 1e-6,
         threshold: float = 4.0,
         n_negatives: int = 2,
@@ -133,6 +133,7 @@ class WideAndDeepRecommender(RecommenderModel):
         dropout: float = 0.2,
         genre_embedding_dim: int = 16,
         max_positive_samples_per_epoch: int = 0,
+        gradient_clip_norm: float = 5.0,
         random_state: int = 42,
         device: str = "auto",
     ) -> None:
@@ -147,6 +148,7 @@ class WideAndDeepRecommender(RecommenderModel):
         self.dropout = float(dropout)
         self.genre_embedding_dim = int(genre_embedding_dim)
         self.max_positive_samples_per_epoch = int(max_positive_samples_per_epoch)
+        self.gradient_clip_norm = float(gradient_clip_norm)
         self.random_state = int(random_state)
         self.device = _detect_device(device)
 
@@ -386,6 +388,7 @@ class WideAndDeepRecommender(RecommenderModel):
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
         )
+        loss_fn = nn.BCEWithLogitsLoss()
 
         rng = np.random.default_rng(self.random_state)
         self.loss_history_.clear()
@@ -442,10 +445,27 @@ class WideAndDeepRecommender(RecommenderModel):
                     occupation_idx=occ_t,
                     item_genre_features=genres_t,
                 )
-                loss = functional.binary_cross_entropy_with_logits(logits, labels_t)
+                if not torch.isfinite(logits).all():
+                    raise RuntimeError(
+                        f"Non-finite logits detected at epoch={epoch + 1}, batch_start={start}"
+                    )
+                loss = loss_fn(logits, labels_t)
+                if not torch.isfinite(loss):
+                    raise RuntimeError(
+                        f"Non-finite loss detected at epoch={epoch + 1}, batch_start={start}"
+                    )
+                if float(loss.item()) < 0.0:
+                    raise RuntimeError(
+                        f"Negative BCE loss detected at epoch={epoch + 1}, batch_start={start}: {float(loss.item())}"
+                    )
 
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                if self.gradient_clip_norm > 0:
+                    nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        max_norm=self.gradient_clip_norm,
+                    )
                 optimizer.step()
 
                 epoch_loss += float(loss.item())

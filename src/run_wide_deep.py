@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--n-epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1024)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-6)
     parser.add_argument("--n-negatives", type=int, default=2)
     parser.add_argument("--embedding-dim", type=int, default=64)
@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--genre-embedding-dim", type=int, default=16)
     parser.add_argument("--max-positive-samples-per-epoch", type=int, default=0)
+    parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--device",
@@ -76,6 +77,7 @@ def main() -> None:
         dropout=args.dropout,
         genre_embedding_dim=args.genre_embedding_dim,
         max_positive_samples_per_epoch=args.max_positive_samples_per_epoch,
+        gradient_clip_norm=args.gradient_clip_norm,
         random_state=args.seed,
         device=args.device,
     )
