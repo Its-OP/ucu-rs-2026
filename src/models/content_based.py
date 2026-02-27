@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Literal
 
 import numpy as np
@@ -9,6 +10,14 @@ from .base import RecommenderModel, Rating
 from sklearn.ensemble import GradientBoostingRegressor
 
 logger = logging.getLogger(__name__)
+
+try:
+    # FAISS can segfault on some environments when OpenMP is oversubscribed.
+    _faiss_threads = int(os.getenv("FAISS_NUM_THREADS", "1"))
+    faiss.omp_set_num_threads(max(1, _faiss_threads))
+except Exception:
+    # Keep model usable even if thread control is unsupported.
+    pass
 
 
 class ContentBasedRecommender(RecommenderModel):

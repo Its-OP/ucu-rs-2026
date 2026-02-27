@@ -4,9 +4,9 @@ import logging
 from dataclasses import dataclass
 from typing import Dict, List
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
 
 from src.models.base import Rating, RecommenderModel
 from src.models.bpr import BPRRecommender
@@ -27,27 +27,31 @@ class CandidateSignals:
 
 
 class TwoStageHybridRecommender(RecommenderModel):
-    """Two-stage hybrid recommender: candidate union + GBR reranking.
+    """Two-stage hybrid recommender: candidate union + LambdaMART reranking.
 
     Stage 1:
-        - collaborative candidates from BPR
+        - collaborative candidates from BPR (large pool)
         - content candidates from ContentBasedRecommender
         - union by item id
 
     Stage 2:
-        - GradientBoostingRegressor over mixed CF/CB/popularity/user features
+        - LightGBM LambdaMART reranker (lambdarank objective, optimises NDCG)
+          over 16 CF/CB/popularity/user features with integer relevance grades.
     """
 
     _FEATURE_NAMES = [
-        "cf_score",
-        "cf_rank_inv",
-        "cb_score",
-        "cb_rank_inv",
-        "in_cf",
-        "in_cb",
-        "cf_cb_interaction",
-        "movie_mean_rating",
-        "movie_rating_count",
+        "cf_score_norm",           # min-max BPR score per user
+        "cf_rank_inv",             # 1 / cf_rank
+        "cf_rank_frac",            # cf_rank / n_cf_retrieved (relative position)
+        "bpr_item_bias",           # raw BPR item bias (global popularity from CF)
+        "cb_score_norm",           # min-max CB cosine similarity per user
+        "cb_rank_inv",             # 1 / cb_rank
+        "cb_rank_frac",            # cb_rank / n_cb_retrieved
+        "in_cf",                   # binary: appears in CF candidates
+        "in_cb",                   # binary: appears in CB candidates
+        "cf_cb_interaction",       # cf_norm * cb_norm (agreement signal)
+        "movie_mean_rating",       # global avg rating
+        "log_movie_rating_count",  # log1p of rating count
         "user_mean_rating",
         "user_rating_count",
         "user_liked_count",
@@ -70,14 +74,15 @@ class TwoStageHybridRecommender(RecommenderModel):
         content_n_neighbors: int = 12,
         content_min_liked: int = 5,
         content_min_ratings: int = 100,
-        cf_candidates: int = 200,
-        cb_candidates: int = 200,
-        cb_search_size: int = 400,
-        train_cf_candidates: int = 120,
-        train_cb_candidates: int = 120,
-        train_cb_search_size: int = 240,
+        cf_candidates: int = 400,
+        cb_candidates: int = 120,
+        cb_search_size: int = 240,
+        train_cf_candidates: int = 200,
+        train_cb_candidates: int = 60,
+        train_cb_search_size: int = 120,
         use_ranker: bool = True,
         blend_alpha: float = 0.7,
+        ranker_cf_blend: float = 1.0,
     ):
         self.threshold = float(threshold)
         self.cf_n_factors = int(cf_n_factors)
@@ -104,10 +109,12 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         self.use_ranker = bool(use_ranker)
         self.blend_alpha = float(blend_alpha)
+        self.ranker_cf_blend = float(ranker_cf_blend)
 
         self.cf_model: BPRRecommender | None = None
         self.cb_model: ContentBasedRecommender | None = None
-        self.ranker: GradientBoostingRegressor | None = None
+        self.ranker: lgb.LGBMRanker | None = None
+        self._bpr_bias_lookup: Dict[int, float] = {}
 
         self.movie_avg: Dict[int, float] = {}
         self.movie_rating_count: Dict[int, int] = {}
@@ -150,6 +157,12 @@ class TwoStageHybridRecommender(RecommenderModel):
             random_state=self.random_state,
         )
         self.cf_model.fit(ratings=ratings, users=users, movies=movies)
+        # Build movie_id -> BPR item bias lookup for use as a reranker feature.
+        if self.cf_model.item_bias is not None:
+            self._bpr_bias_lookup = {
+                int(self.cf_model.idx_to_item[idx]): float(self.cf_model.item_bias[idx])
+                for idx in range(len(self.cf_model.item_bias))
+            }
 
         logger.info("Fitting content-based component...")
         self.cb_model = ContentBasedRecommender(
@@ -180,8 +193,11 @@ class TwoStageHybridRecommender(RecommenderModel):
         if self.cf_model is None or self.cb_model is None:
             raise RuntimeError("Model not fitted. Call fit(...) first.")
 
-        results: Dict[int, List[Rating]] = {}
-        for user_id in users["UserID"].astype(int).tolist():
+        user_ids = users["UserID"].astype(int).tolist()
+
+        # Build all candidate signals first (per-user work).
+        all_signals: Dict[int, list[CandidateSignals]] = {}
+        for user_id in user_ids:
             signals = self._build_candidate_signals(
                 user_id=user_id,
                 n_cf=self.cf_candidates,
@@ -189,19 +205,99 @@ class TwoStageHybridRecommender(RecommenderModel):
                 cb_search_size=self.cb_search_size,
                 filter_watched=True,
             )
+            all_signals[user_id] = signals
+
+        # Batch-score all users in a single ranker call to avoid per-user Python overhead.
+        scored_map = self._score_all_candidates(all_signals)
+
+        results: Dict[int, List[Rating]] = {}
+        for user_id in user_ids:
+            signals = all_signals[user_id]
             if not signals:
                 results[user_id] = self._popular_fallback(user_id, k)
                 continue
 
-            scored = self._score_candidates(user_id, signals)
+            scored = scored_map[user_id]
             scored.sort(key=lambda x: x[1], reverse=True)
-            top = scored[:k]
             results[user_id] = [
                 Rating(movie_id=int(movie_id), score=float(score))
-                for movie_id, score in top
+                for movie_id, score in scored[:k]
             ]
 
         return results
+
+    def _score_all_candidates(
+        self,
+        all_signals: Dict[int, list[CandidateSignals]],
+    ) -> Dict[int, list[tuple[int, float]]]:
+        """Score candidates for all users in a single batched ranker call."""
+        users_with_signals = [uid for uid, sigs in all_signals.items() if sigs]
+
+        if not users_with_signals:
+            return {}
+
+        # Fallback: ranker not trained, score per user via RRF (cheap).
+        if self.ranker is None:
+            return {
+                uid: self._score_rank_fusion(all_signals[uid])
+                for uid in users_with_signals
+            }
+
+        # Build one large feature matrix over all users, record block sizes.
+        feature_blocks = [
+            self._build_feature_matrix(uid, all_signals[uid])
+            for uid in users_with_signals
+        ]
+        block_sizes = [b.shape[0] for b in feature_blocks]
+        x = np.vstack(feature_blocks)
+
+        # Single LGB predict call — much faster than 6k individual calls.
+        scores = self.ranker.predict(x)
+
+        def _minmax_1d(v: np.ndarray) -> np.ndarray:
+            lo, hi = float(v.min()), float(v.max())
+            if hi <= lo + 1e-12:
+                return np.zeros_like(v, dtype=np.float64)
+            return (v - lo) / (hi - lo)
+
+        result: Dict[int, list[tuple[int, float]]] = {}
+        offset = 0
+        for uid, n in zip(users_with_signals, block_sizes):
+            user_scores = scores[offset : offset + n]
+
+            if self.ranker_cf_blend < 1.0:
+                # Blend ranker score with the raw BPR CF score to preserve
+                # BPR's strong top-position signal for NDCG@10 / MRR.
+                cf_raw = np.array(
+                    [all_signals[uid][i].cf_score for i in range(n)], dtype=np.float64
+                )
+                ranker_norm = _minmax_1d(user_scores.astype(np.float64))
+                cf_norm = _minmax_1d(cf_raw)
+                user_scores = (
+                    self.ranker_cf_blend * ranker_norm
+                    + (1.0 - self.ranker_cf_blend) * cf_norm
+                )
+
+            result[uid] = [
+                (all_signals[uid][i].movie_id, float(user_scores[i]))
+                for i in range(n)
+            ]
+            offset += n
+
+        return result
+
+    @staticmethod
+    def _rating_to_grade(r: float) -> int:
+        """Map a raw rating to a non-negative integer relevance grade for LambdaMART."""
+        if r < 1.0:
+            return 0  # unrated
+        if r < 3.0:
+            return 0  # 1-2 stars: irrelevant
+        if r < 4.0:
+            return 1  # 3 stars: somewhat relevant
+        if r < 5.0:
+            return 2  # 4 stars: relevant
+        return 3      # 5 stars: highly relevant
 
     def _train_reranker(
         self,
@@ -209,7 +305,7 @@ class TwoStageHybridRecommender(RecommenderModel):
         label_ratings: pd.DataFrame,
     ) -> None:
         rating_lookup = {
-            (int(uid), int(mid)): float(r >= self.threshold)
+            (int(uid), int(mid)): float(r)
             for uid, mid, r in zip(
                 label_ratings["UserID"].values,
                 label_ratings["MovieID"].values,
@@ -219,6 +315,7 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         all_x: list[np.ndarray] = []
         all_y: list[np.ndarray] = []
+        group_sizes: list[int] = []
 
         for user_id in users["UserID"].astype(int).tolist():
             signals = self._build_candidate_signals(
@@ -233,17 +330,21 @@ class TwoStageHybridRecommender(RecommenderModel):
                 continue
 
             features = self._build_feature_matrix(user_id, signals)
-            labels = np.array(
-                [rating_lookup.get((user_id, s.movie_id), 0.0) for s in signals],
-                dtype=np.float32,
+            grades = np.array(
+                [
+                    self._rating_to_grade(rating_lookup.get((user_id, s.movie_id), 0.0))
+                    for s in signals
+                ],
+                dtype=np.int32,
             )
 
-            # The reranker must see both classes for stable learning.
-            if np.all(labels == 0.0) or np.all(labels == 1.0):
+            # Skip groups with no positive candidates: LambdaMART can't learn from them.
+            if np.all(grades == 0):
                 continue
 
             all_x.append(features)
-            all_y.append(labels)
+            all_y.append(grades)
+            group_sizes.append(len(signals))
 
         if not all_x:
             logger.warning("No reranker samples collected; falling back to score blending.")
@@ -252,21 +353,27 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         x = np.vstack(all_x)
         y = np.concatenate(all_y)
-        pos_rate = float((y > 0.5).mean())
+        group = np.array(group_sizes, dtype=np.int32)
+        pos_rate = float((y > 0).mean())
 
-        self.ranker = GradientBoostingRegressor(
-            n_estimators=150,
-            max_depth=4,
+        self.ranker = lgb.LGBMRanker(
+            objective="lambdarank",
+            metric="ndcg",
+            n_estimators=300,
             learning_rate=0.05,
-            min_samples_leaf=30,
+            num_leaves=31,
+            min_child_samples=20,
             subsample=0.8,
+            colsample_bytree=0.8,
             random_state=self.random_state,
+            verbose=-1,
         )
-        self.ranker.fit(x, y)
+        self.ranker.fit(x, y, group=group)
 
         importance = dict(zip(self._FEATURE_NAMES, self.ranker.feature_importances_))
         logger.info(
-            "Reranker trained: n_samples=%d n_features=%d positive_rate=%.4f",
+            "Reranker trained: n_users=%d n_samples=%d n_features=%d positive_rate=%.4f",
+            len(group_sizes),
             x.shape[0],
             x.shape[1],
             pos_rate,
@@ -427,13 +534,7 @@ class TwoStageHybridRecommender(RecommenderModel):
         signals: list[CandidateSignals],
     ) -> list[tuple[int, float]]:
         if self.ranker is None:
-            return [
-                (
-                    s.movie_id,
-                    float(self.blend_alpha * s.cf_score + (1.0 - self.blend_alpha) * s.cb_score),
-                )
-                for s in signals
-            ]
+            return self._score_rank_fusion(signals)
 
         x = self._build_feature_matrix(user_id, signals)
         scores = self.ranker.predict(x)
@@ -441,6 +542,22 @@ class TwoStageHybridRecommender(RecommenderModel):
             (signals[i].movie_id, float(scores[i]))
             for i in range(len(signals))
         ]
+
+    def _score_rank_fusion(
+        self,
+        signals: list[CandidateSignals],
+    ) -> list[tuple[int, float]]:
+        """Scale-safe fallback: weighted reciprocal rank fusion."""
+        cf_w = max(0.0, min(1.0, self.blend_alpha))
+        cb_w = 1.0 - cf_w
+        # Larger constant smooths rank differences while preserving order.
+        rrf_k = 60.0
+        scored: list[tuple[int, float]] = []
+        for s in signals:
+            cf_term = cf_w / (rrf_k + s.cf_rank) if s.cf_rank > 0 else 0.0
+            cb_term = cb_w / (rrf_k + s.cb_rank) if s.cb_rank > 0 else 0.0
+            scored.append((s.movie_id, float(cf_term + cb_term)))
+        return scored
 
     def _build_feature_matrix(
         self,
@@ -451,22 +568,44 @@ class TwoStageHybridRecommender(RecommenderModel):
         is_cold = 1.0 if user_liked == 0 else 0.0
         x = np.zeros((len(signals), len(self._FEATURE_NAMES)), dtype=np.float32)
 
+        cf_raw = np.array([s.cf_score for s in signals], dtype=np.float32)
+        cb_raw = np.array([s.cb_score for s in signals], dtype=np.float32)
+
+        def _minmax(values: np.ndarray) -> np.ndarray:
+            vmin = float(values.min()) if values.size else 0.0
+            vmax = float(values.max()) if values.size else 0.0
+            if vmax <= vmin + 1e-12:
+                return np.zeros_like(values, dtype=np.float32)
+            return ((values - vmin) / (vmax - vmin)).astype(np.float32)
+
+        cf_norm = _minmax(cf_raw)
+        cb_norm = _minmax(cb_raw)
+
+        # Denominator for relative rank fraction (avoid div-by-zero).
+        n_cf = max(s.cf_rank for s in signals if s.in_cf) if any(s.in_cf for s in signals) else 1
+        n_cb = max(s.cb_rank for s in signals if s.in_cb) if any(s.in_cb for s in signals) else 1
+
         for row, s in enumerate(signals):
             cf_rank_inv = 1.0 / float(s.cf_rank) if s.cf_rank > 0 else 0.0
             cb_rank_inv = 1.0 / float(s.cb_rank) if s.cb_rank > 0 else 0.0
-            x[row, 0] = s.cf_score
+            cf_rank_frac = float(s.cf_rank) / float(n_cf) if s.cf_rank > 0 else 1.0
+            cb_rank_frac = float(s.cb_rank) / float(n_cb) if s.cb_rank > 0 else 1.0
+            x[row, 0] = cf_norm[row]
             x[row, 1] = cf_rank_inv
-            x[row, 2] = s.cb_score
-            x[row, 3] = cb_rank_inv
-            x[row, 4] = float(s.in_cf)
-            x[row, 5] = float(s.in_cb)
-            x[row, 6] = float(s.cf_score * s.cb_score)
-            x[row, 7] = float(self.movie_avg.get(s.movie_id, 0.0))
-            x[row, 8] = float(self.movie_rating_count.get(s.movie_id, 0))
-            x[row, 9] = float(user_mean)
-            x[row, 10] = float(user_count)
-            x[row, 11] = float(user_liked)
-            x[row, 12] = float(is_cold)
+            x[row, 2] = cf_rank_frac
+            x[row, 3] = float(self._bpr_bias_lookup.get(s.movie_id, 0.0))
+            x[row, 4] = cb_norm[row]
+            x[row, 5] = cb_rank_inv
+            x[row, 6] = cb_rank_frac
+            x[row, 7] = float(s.in_cf)
+            x[row, 8] = float(s.in_cb)
+            x[row, 9] = float(cf_norm[row] * cb_norm[row])
+            x[row, 10] = float(self.movie_avg.get(s.movie_id, 0.0))
+            x[row, 11] = float(np.log1p(self.movie_rating_count.get(s.movie_id, 0)))
+            x[row, 12] = float(user_mean)
+            x[row, 13] = float(user_count)
+            x[row, 14] = float(user_liked)
+            x[row, 15] = float(is_cold)
 
         return x
 

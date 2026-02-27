@@ -98,6 +98,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-cb-search-size", type=int, default=240)
     parser.add_argument("--blend-alpha", type=float, default=0.7)
     parser.add_argument("--disable-ranker", action="store_true")
+    parser.add_argument(
+        "--ranker-cf-blend",
+        type=float,
+        default=1.0,
+        help=(
+            "Blend ranker score with normalised BPR CF score at prediction time. "
+            "1.0 = pure ranker; 0.0 = pure CF; 0.7 = 70%% ranker + 30%% CF."
+        ),
+    )
 
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
@@ -193,6 +202,7 @@ def main() -> None:
         train_cb_search_size=args.train_cb_search_size,
         use_ranker=not args.disable_ranker,
         blend_alpha=args.blend_alpha,
+        ranker_cf_blend=args.ranker_cf_blend,
     )
 
     logger.info("Fitting TwoStageHybridRecommender...")
