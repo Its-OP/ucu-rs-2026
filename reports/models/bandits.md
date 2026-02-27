@@ -5,27 +5,29 @@ Important directories:
 2. Launch script: `src/run_bandit.py` for full CLI simulation
 3. Experiment setup&results: `runs/bandit_*` reports and this document (`reports/models/bandits.md`)
 
-## Why Offline Metrics Are Insufficient
+## Motivation
 
-BPR and ItemGraph score nearly identical NDCG@10 (0.296 vs 0.288) on the held-out validation set. A single aggregate number hides _who_ each model serves well. If ItemGraph outperforms BPR for a portion of users but underperforms for the rest, the averages look similar while both models leave value on the table. Offline evaluation tells us which model is better _on average_ — bandits tell us which model is better _per user_.
+BPR and ItemGraph score nearly identical NDCG@10 (0.296 vs 0.288) on the held-out validation set. However, NDCG is an offline proxy — the true per-user reward distributions (e.g. clickthrough rate) may differ between the two models in ways that NDCG cannot capture. A static model selection based on aggregate NDCG would serve BPR to everyone, potentially ignoring users for whom ItemGraph generates better engagement.
 
-A static model selection (pick the one with the higher average) would serve BPR to everyone and ignore the subpopulation where ItemGraph wins. Bandits discover these subpopulations adaptively without requiring explicit cohort definitions upfront.
+Bandits let us discover per-user model preferences adaptively without requiring explicit cohort definitions upfront. Since we do not have access to an online environment, we simulate this process using per-user NDCG@10 as a proxy for clickthrough rate.
 
 ## Exploration-Exploitation Trade-Off
 
-Every user routed to the currently-weaker arm is an exploration cost — that user gets a potentially worse recommendation. But without exploration, we never learn whether the weaker arm is actually better for certain users, and we converge prematurely on a suboptimal policy.
+Every user routed to the currently-weaker arm is an exploration cost — that user gets a potentially worse recommendation. However, the arm we consider weaker might actually be getting better results, and we just don't have enough data to see it. Exploration helps us get this data.
 
-**Epsilon-greedy** (epsilon=0.1) handles this simply: 10% of users are randomly assigned to a uniformly-chosen arm regardless of evidence. This leads to minimal exploration of ItemGraph (4.5% selections) because random assignment wastes exploration budget on users where BPR already dominates.
+A standard **A/B test** is itself a bandit algorithm — specifically, _explore-then-commit_: show each option a fixed percentage of the time during a pure exploration period, then deploy the winner for pure exploitation. It does not adapt during the exploration phase.
 
-**Thompson Sampling** explores more efficiently by sampling from each arm's posterior. It naturally explores more when uncertain and exploits when confident, routing 18.9% of users to ItemGraph — nearly 4x more than epsilon-greedy — while maintaining a higher per-arm NDCG for those users (0.282 vs 0.255).
+**Epsilon-greedy** interleaves exploration and exploitation continuously: with probability epsilon it explores (random arm), otherwise it exploits (best arm so far). However, it explores at a _constant rate_ regardless of how confident it is in each arm's estimate. In our simulation (epsilon=0.1), it converged quickly to BPR, with only 4.5% of users seeing ItemGraph.
 
-## Results Summary
+**Thompson Sampling** adjusts exploration based on two factors: how good each arm's estimated reward is, and how _confident_ we are in that estimate. It samples from each arm's posterior distribution and picks the highest sample. When uncertain about an arm, the posterior is wide and occasionally produces high samples, driving exploration. As evidence accumulates, the posterior narrows and the better arm wins consistently. It converges slower than epsilon-greedy, routing 18.9% of users to ItemGraph before settling on BPR as the stronger arm.
+
+## Results Summary (NDCG@10 as CTR proxy)
 
 | | Epsilon-Greedy | Thompson Sampling |
 |---|---|---|
 | BPR selections | 95.5% | 81.1% |
 | ItemGraph selections | 4.5% | 18.9% |
-| ItemGraph mean NDCG | 0.255 | 0.282 |
-| Converged NDCG@10 | 0.297 | 0.296 |
+| ItemGraph mean reward | 0.255 | 0.282 |
+| Converged policy reward | 0.297 | 0.296 |
 
-Both strategies converge to similar overall NDCG, confirming BPR's global dominance. The key difference is, Thompson Sampling delivers higher quality to the users it routes to ItemGraph, suggesting it identifies a genuine subpopulation rather than exploring randomly.
+Both strategies converge to similar overall reward, confirming BPR's global dominance under the NDCG proxy. Thompson Sampling converges slower than epsilon-greedy, dedicating more budget to exploration (18.9% vs 4.5% ItemGraph selections) before settling on BPR as the stronger arm.
