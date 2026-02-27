@@ -14,6 +14,7 @@ from src.models.popularity import (
 )
 from src.models.ANN.two_towers import TwoTowerTransformerRecommender
 from src.models.bandit import BanditModelSelector
+from src.models.wide_deep import WideAndDeepRecommender
 
 __all__ = [
     "RecommenderModel",
@@ -29,4 +30,5 @@ __all__ = [
     "BayesianPopularityRanker",
     "RecencyPopularityRanker",
     "TwoTowerTransformerRecommender",
+    "WideAndDeepRecommender",
 ]

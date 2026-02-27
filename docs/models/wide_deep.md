@@ -8,6 +8,8 @@ Important directories:
 3. Experiment pipeline: `experiments/WideDeep/WideDeep.ipynb`
 4. Experiment report: `experiments/WideDeep/results.md`
 
+Paper reference: [Wide & Deep Learning for Recommender Systems (arXiv:1606.07792)](https://arxiv.org/abs/1606.07792).
+
 ## 1. Goal
 
 Wide & Deep combines:
