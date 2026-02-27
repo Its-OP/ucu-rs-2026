@@ -1,0 +1,4 @@
+protocol,variant,ndcg_at_10,precision_at_10,recall_at_10,mrr_at_10,map_at_10,n_users_evaluated,skip_rate
+global_temporal_val,hybrid_no_ranker_rrf085,0.2957,0.26396,0.05564,0.46636,0.17936,1188,0.80331
+global_temporal_test,hybrid_no_ranker_rrf085_test,0.23709,0.21007,0.04958,0.37669,0.13406,1347,0.77699
+per_user_temporal_val,hybrid_no_ranker_rrf085,0.14293,0.12292,0.05751,0.26528,0.06885,5999,0.00679

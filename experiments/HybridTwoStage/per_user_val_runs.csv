@@ -1,0 +1,145 @@
+name,split_type,split,evaluator,command,elapsed_seconds,ndcg_at_10,precision_at_10,recall_at_10,mrr_at_10,map_at_10,n_users_evaluated,skip_rate,return_code,success,error_kind,raw_output,note
+hybrid_no_ranker_rrf085,per_user,val,offline,"/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/bin/python -m src.run_hybrid_two_stage --split-type per_user --split val --evaluator offline --ks 10,20 --k 10 --mode all --content-n-neighbors 5 --cf-candidates 400 --cb-candidates 120 --train-cf-candidates 200 --train-cb-candidates 60 --rerank-holdout-frac 0.10 --seed 42 --disable-ranker --blend-alpha 0.85",424.408643249888,0.14293,0.12292,0.05751,0.26528,0.06885,5999,0.00679,0,True,,"2026-02-27 23:00:19,006 INFO __main__: Fitting TwoStageHybridRecommender...
+2026-02-27 23:00:19,310 INFO src.models.hybrid_two_stage: Fitting BPR component...
+2026-02-27 23:00:39,344 INFO src.models.bpr: BPR epoch 1/20, avg loss: 0.434580
+2026-02-27 23:00:58,902 INFO src.models.bpr: BPR epoch 2/20, avg loss: 0.350822
+2026-02-27 23:01:38,591 INFO src.models.bpr: BPR epoch 4/20, avg loss: 0.328740
+2026-02-27 23:02:18,597 INFO src.models.bpr: BPR epoch 6/20, avg loss: 0.321364
+2026-02-27 23:02:56,547 INFO src.models.bpr: BPR epoch 8/20, avg loss: 0.314320
+2026-02-27 23:03:34,982 INFO src.models.bpr: BPR epoch 10/20, avg loss: 0.308057
+2026-02-27 23:04:13,780 INFO src.models.bpr: BPR epoch 12/20, avg loss: 0.300080
+2026-02-27 23:04:51,773 INFO src.models.bpr: BPR epoch 14/20, avg loss: 0.291103
+2026-02-27 23:05:30,939 INFO src.models.bpr: BPR epoch 16/20, avg loss: 0.281520
+2026-02-27 23:06:10,009 INFO src.models.bpr: BPR epoch 18/20, avg loss: 0.270769
+2026-02-27 23:06:49,343 INFO src.models.bpr: BPR epoch 20/20, avg loss: 0.263087
+2026-02-27 23:06:49,346 INFO src.models.hybrid_two_stage: Fitting content-based component...
+2026-02-27 23:07:16,572 WARNING src.eval.offline_ranking: Skipped 41/6040 users with no relevant items in test set (threshold=4.00)
+2026-02-27 23:07:16,605 INFO __main__: === Offline Evaluation ===
+2026-02-27 23:07:16,605 INFO __main__: Split type: per_user
+2026-02-27 23:07:16,605 INFO __main__: Split: val
+2026-02-27 23:07:16,605 INFO __main__: Mode: all
+2026-02-27 23:07:16,605 INFO __main__: Users total=6040, with_gt=6040, eligible=5999, evaluated=5999, skipped=41
+2026-02-27 23:07:16,605 INFO __main__: Coverage rate=1.00000, avg list size=20.00, skip rate=0.00679
+2026-02-27 23:07:16,605 INFO __main__: k=10: ndcg=0.14293 precision=0.12292 recall=0.05751 mrr=0.26528 map=0.06885
+2026-02-27 23:07:16,605 INFO __main__: k=20: ndcg=0.14597 precision=0.11197 recall=0.07671 mrr=0.27479 map=0.05826
+","Ablation: CF-dominant RRF, no ML reranker"
+hybrid_lambdamart_blend1.0,per_user,val,offline,"/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/bin/python -m src.run_hybrid_two_stage --split-type per_user --split val --evaluator offline --ks 10,20 --k 10 --mode all --content-n-neighbors 5 --cf-candidates 400 --cb-candidates 120 --train-cf-candidates 200 --train-cb-candidates 60 --rerank-holdout-frac 0.10 --seed 42 --ranker-cf-blend 1.0",410.59008158301003,0.10534,0.08841,0.04392,0.18787,0.03934,5999,0.00679,0,True,,"2026-02-27 23:07:24,272 INFO __main__: Reranker holdout generated from training window: base_train=672936 rerank_labels=74973
+2026-02-27 23:07:24,272 INFO __main__: Fitting TwoStageHybridRecommender...
+2026-02-27 23:07:24,563 INFO src.models.hybrid_two_stage: Fitting BPR component...
+2026-02-27 23:07:42,150 INFO src.models.bpr: BPR epoch 1/20, avg loss: 0.438777
+2026-02-27 23:07:59,022 INFO src.models.bpr: BPR epoch 2/20, avg loss: 0.351692
+2026-02-27 23:08:33,982 INFO src.models.bpr: BPR epoch 4/20, avg loss: 0.328003
+2026-02-27 23:09:08,109 INFO src.models.bpr: BPR epoch 6/20, avg loss: 0.320536
+2026-02-27 23:09:42,905 INFO src.models.bpr: BPR epoch 8/20, avg loss: 0.313990
+2026-02-27 23:10:17,767 INFO src.models.bpr: BPR epoch 10/20, avg loss: 0.307143
+2026-02-27 23:10:51,947 INFO src.models.bpr: BPR epoch 12/20, avg loss: 0.300973
+2026-02-27 23:11:26,600 INFO src.models.bpr: BPR epoch 14/20, avg loss: 0.294364
+2026-02-27 23:12:00,373 INFO src.models.bpr: BPR epoch 16/20, avg loss: 0.285633
+2026-02-27 23:12:34,808 INFO src.models.bpr: BPR epoch 18/20, avg loss: 0.276491
+2026-02-27 23:13:08,619 INFO src.models.bpr: BPR epoch 20/20, avg loss: 0.267014
+2026-02-27 23:13:08,620 INFO src.models.hybrid_two_stage: Fitting content-based component...
+2026-02-27 23:13:19,188 INFO src.models.hybrid_two_stage: Training hybrid reranker...
+2026-02-27 23:13:39,316 INFO src.models.hybrid_two_stage: Reranker trained: n_users=5437 n_samples=1328047 n_features=16 positive_rate=0.0209
+2026-02-27 23:13:39,316 INFO src.models.hybrid_two_stage: Reranker feature importances: {'cf_score_norm': np.int32(712), 'cf_rank_inv': np.int32(743), 'cf_rank_frac': np.int32(272), 'bpr_item_bias': np.int32(987), 'cb_score_norm': np.int32(648), 'cb_rank_inv': np.int32(349), 'cb_rank_frac': np.int32(181), 'in_cf': np.int32(0), 'in_cb': np.int32(0), 'cf_cb_interaction': np.int32(540), 'movie_mean_rating': np.int32(982), 'log_movie_rating_count': np.int32(770), 'user_mean_rating': np.int32(984), 'user_rating_count': np.int32(1005), 'user_liked_count': np.int32(827), 'is_cold_user': np.int32(0)}
+/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/lib/python3.12/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMRanker was fitted with feature names
+  warnings.warn(
+2026-02-27 23:14:07,194 WARNING src.eval.offline_ranking: Skipped 41/6040 users with no relevant items in test set (threshold=4.00)
+2026-02-27 23:14:07,226 INFO __main__: === Offline Evaluation ===
+2026-02-27 23:14:07,226 INFO __main__: Split type: per_user
+2026-02-27 23:14:07,227 INFO __main__: Split: val
+2026-02-27 23:14:07,227 INFO __main__: Mode: all
+2026-02-27 23:14:07,227 INFO __main__: Users total=6040, with_gt=6040, eligible=5999, evaluated=5999, skipped=41
+2026-02-27 23:14:07,227 INFO __main__: Coverage rate=1.00000, avg list size=20.00, skip rate=0.00679
+2026-02-27 23:14:07,227 INFO __main__: k=10: ndcg=0.10534 precision=0.08841 recall=0.04392 mrr=0.18787 map=0.03934
+2026-02-27 23:14:07,227 INFO __main__: k=20: ndcg=0.11581 precision=0.08482 recall=0.05988 mrr=0.19910 map=0.03605
+",Pure LambdaMART output; no BPR score pull
+hybrid_lambdamart_blend0.8,per_user,val,offline,"/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/bin/python -m src.run_hybrid_two_stage --split-type per_user --split val --evaluator offline --ks 10,20 --k 10 --mode all --content-n-neighbors 5 --cf-candidates 400 --cb-candidates 120 --train-cf-candidates 200 --train-cb-candidates 60 --rerank-holdout-frac 0.10 --seed 42 --ranker-cf-blend 0.8",416.90525854192674,0.11981,0.10291,0.04894,0.21283,0.04905,5999,0.00679,0,True,,"2026-02-27 23:14:15,251 INFO __main__: Reranker holdout generated from training window: base_train=672936 rerank_labels=74973
+2026-02-27 23:14:15,251 INFO __main__: Fitting TwoStageHybridRecommender...
+2026-02-27 23:14:15,540 INFO src.models.hybrid_two_stage: Fitting BPR component...
+2026-02-27 23:14:33,181 INFO src.models.bpr: BPR epoch 1/20, avg loss: 0.438777
+2026-02-27 23:14:50,187 INFO src.models.bpr: BPR epoch 2/20, avg loss: 0.351692
+2026-02-27 23:15:24,873 INFO src.models.bpr: BPR epoch 4/20, avg loss: 0.328003
+2026-02-27 23:15:59,399 INFO src.models.bpr: BPR epoch 6/20, avg loss: 0.320536
+2026-02-27 23:16:35,948 INFO src.models.bpr: BPR epoch 8/20, avg loss: 0.313990
+2026-02-27 23:17:10,301 INFO src.models.bpr: BPR epoch 10/20, avg loss: 0.307143
+2026-02-27 23:17:45,643 INFO src.models.bpr: BPR epoch 12/20, avg loss: 0.300973
+2026-02-27 23:18:20,785 INFO src.models.bpr: BPR epoch 14/20, avg loss: 0.294364
+2026-02-27 23:18:54,676 INFO src.models.bpr: BPR epoch 16/20, avg loss: 0.285633
+2026-02-27 23:19:29,390 INFO src.models.bpr: BPR epoch 18/20, avg loss: 0.276491
+2026-02-27 23:20:03,333 INFO src.models.bpr: BPR epoch 20/20, avg loss: 0.267014
+2026-02-27 23:20:03,342 INFO src.models.hybrid_two_stage: Fitting content-based component...
+2026-02-27 23:20:14,139 INFO src.models.hybrid_two_stage: Training hybrid reranker...
+2026-02-27 23:20:35,846 INFO src.models.hybrid_two_stage: Reranker trained: n_users=5433 n_samples=1327066 n_features=16 positive_rate=0.0209
+2026-02-27 23:20:35,846 INFO src.models.hybrid_two_stage: Reranker feature importances: {'cf_score_norm': np.int32(646), 'cf_rank_inv': np.int32(730), 'cf_rank_frac': np.int32(256), 'bpr_item_bias': np.int32(996), 'cb_score_norm': np.int32(552), 'cb_rank_inv': np.int32(364), 'cb_rank_frac': np.int32(179), 'in_cf': np.int32(0), 'in_cb': np.int32(2), 'cf_cb_interaction': np.int32(580), 'movie_mean_rating': np.int32(973), 'log_movie_rating_count': np.int32(804), 'user_mean_rating': np.int32(1096), 'user_rating_count': np.int32(998), 'user_liked_count': np.int32(824), 'is_cold_user': np.int32(0)}
+/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/lib/python3.12/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMRanker was fitted with feature names
+  warnings.warn(
+2026-02-27 23:21:03,931 WARNING src.eval.offline_ranking: Skipped 41/6040 users with no relevant items in test set (threshold=4.00)
+2026-02-27 23:21:03,963 INFO __main__: === Offline Evaluation ===
+2026-02-27 23:21:03,963 INFO __main__: Split type: per_user
+2026-02-27 23:21:03,963 INFO __main__: Split: val
+2026-02-27 23:21:03,963 INFO __main__: Mode: all
+2026-02-27 23:21:03,963 INFO __main__: Users total=6040, with_gt=6040, eligible=5999, evaluated=5999, skipped=41
+2026-02-27 23:21:03,963 INFO __main__: Coverage rate=1.00000, avg list size=20.00, skip rate=0.00679
+2026-02-27 23:21:03,963 INFO __main__: k=10: ndcg=0.11981 precision=0.10291 recall=0.04894 mrr=0.21283 map=0.04905
+2026-02-27 23:21:03,963 INFO __main__: k=20: ndcg=0.12814 precision=0.09684 recall=0.06702 mrr=0.22316 map=0.04350
+",80% LambdaMART + 20% BPR CF
+hybrid_lambdamart_blend0.6,per_user,val,offline,"/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/bin/python -m src.run_hybrid_two_stage --split-type per_user --split val --evaluator offline --ks 10,20 --k 10 --mode all --content-n-neighbors 5 --cf-candidates 400 --cb-candidates 120 --train-cf-candidates 200 --train-cb-candidates 60 --rerank-holdout-frac 0.10 --seed 42 --ranker-cf-blend 0.6",414.5286347500514,0.1251,0.10774,0.0501,0.23049,0.0549,5999,0.00679,0,True,,"2026-02-27 23:21:11,763 INFO __main__: Reranker holdout generated from training window: base_train=672936 rerank_labels=74973
+2026-02-27 23:21:11,763 INFO __main__: Fitting TwoStageHybridRecommender...
+2026-02-27 23:21:12,838 INFO src.models.hybrid_two_stage: Fitting BPR component...
+2026-02-27 23:21:31,094 INFO src.models.bpr: BPR epoch 1/20, avg loss: 0.438777
+2026-02-27 23:21:48,290 INFO src.models.bpr: BPR epoch 2/20, avg loss: 0.351692
+2026-02-27 23:22:23,146 INFO src.models.bpr: BPR epoch 4/20, avg loss: 0.328003
+2026-02-27 23:22:58,208 INFO src.models.bpr: BPR epoch 6/20, avg loss: 0.320536
+2026-02-27 23:23:33,167 INFO src.models.bpr: BPR epoch 8/20, avg loss: 0.313990
+2026-02-27 23:24:07,139 INFO src.models.bpr: BPR epoch 10/20, avg loss: 0.307143
+2026-02-27 23:24:41,945 INFO src.models.bpr: BPR epoch 12/20, avg loss: 0.300973
+2026-02-27 23:25:17,137 INFO src.models.bpr: BPR epoch 14/20, avg loss: 0.294364
+2026-02-27 23:25:51,719 INFO src.models.bpr: BPR epoch 16/20, avg loss: 0.285633
+2026-02-27 23:26:26,544 INFO src.models.bpr: BPR epoch 18/20, avg loss: 0.276491
+2026-02-27 23:27:00,607 INFO src.models.bpr: BPR epoch 20/20, avg loss: 0.267014
+2026-02-27 23:27:00,611 INFO src.models.hybrid_two_stage: Fitting content-based component...
+2026-02-27 23:27:10,410 INFO src.models.hybrid_two_stage: Training hybrid reranker...
+2026-02-27 23:27:31,508 INFO src.models.hybrid_two_stage: Reranker trained: n_users=5431 n_samples=1326403 n_features=16 positive_rate=0.0209
+2026-02-27 23:27:31,508 INFO src.models.hybrid_two_stage: Reranker feature importances: {'cf_score_norm': np.int32(669), 'cf_rank_inv': np.int32(740), 'cf_rank_frac': np.int32(277), 'bpr_item_bias': np.int32(945), 'cb_score_norm': np.int32(621), 'cb_rank_inv': np.int32(347), 'cb_rank_frac': np.int32(160), 'in_cf': np.int32(1), 'in_cb': np.int32(0), 'cf_cb_interaction': np.int32(556), 'movie_mean_rating': np.int32(1001), 'log_movie_rating_count': np.int32(766), 'user_mean_rating': np.int32(1034), 'user_rating_count': np.int32(1025), 'user_liked_count': np.int32(858), 'is_cold_user': np.int32(0)}
+/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/lib/python3.12/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMRanker was fitted with feature names
+  warnings.warn(
+2026-02-27 23:27:58,617 WARNING src.eval.offline_ranking: Skipped 41/6040 users with no relevant items in test set (threshold=4.00)
+2026-02-27 23:27:58,648 INFO __main__: === Offline Evaluation ===
+2026-02-27 23:27:58,648 INFO __main__: Split type: per_user
+2026-02-27 23:27:58,648 INFO __main__: Split: val
+2026-02-27 23:27:58,648 INFO __main__: Mode: all
+2026-02-27 23:27:58,648 INFO __main__: Users total=6040, with_gt=6040, eligible=5999, evaluated=5999, skipped=41
+2026-02-27 23:27:58,648 INFO __main__: Coverage rate=1.00000, avg list size=20.00, skip rate=0.00679
+2026-02-27 23:27:58,648 INFO __main__: k=10: ndcg=0.12510 precision=0.10774 recall=0.05010 mrr=0.23049 map=0.05490
+2026-02-27 23:27:58,648 INFO __main__: k=20: ndcg=0.13023 precision=0.09920 recall=0.06814 mrr=0.24058 map=0.04697
+",60% LambdaMART + 40% BPR CF — best known on test
+hybrid_lambdamart_blend0.4,per_user,val,offline,"/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/bin/python -m src.run_hybrid_two_stage --split-type per_user --split val --evaluator offline --ks 10,20 --k 10 --mode all --content-n-neighbors 5 --cf-candidates 400 --cb-candidates 120 --train-cf-candidates 200 --train-cb-candidates 60 --rerank-holdout-frac 0.10 --seed 42 --ranker-cf-blend 0.4",415.36699179187417,0.12698,0.109,0.05034,0.23632,0.0573,5999,0.00679,0,True,,"2026-02-27 23:28:05,924 INFO __main__: Reranker holdout generated from training window: base_train=672936 rerank_labels=74973
+2026-02-27 23:28:05,924 INFO __main__: Fitting TwoStageHybridRecommender...
+2026-02-27 23:28:06,203 INFO src.models.hybrid_two_stage: Fitting BPR component...
+2026-02-27 23:28:24,692 INFO src.models.bpr: BPR epoch 1/20, avg loss: 0.438777
+2026-02-27 23:28:41,864 INFO src.models.bpr: BPR epoch 2/20, avg loss: 0.351692
+2026-02-27 23:29:16,513 INFO src.models.bpr: BPR epoch 4/20, avg loss: 0.328003
+2026-02-27 23:29:50,560 INFO src.models.bpr: BPR epoch 6/20, avg loss: 0.320536
+2026-02-27 23:30:26,421 INFO src.models.bpr: BPR epoch 8/20, avg loss: 0.313990
+2026-02-27 23:31:00,262 INFO src.models.bpr: BPR epoch 10/20, avg loss: 0.307143
+2026-02-27 23:31:35,404 INFO src.models.bpr: BPR epoch 12/20, avg loss: 0.300973
+2026-02-27 23:32:09,504 INFO src.models.bpr: BPR epoch 14/20, avg loss: 0.294364
+2026-02-27 23:32:44,342 INFO src.models.bpr: BPR epoch 16/20, avg loss: 0.285633
+2026-02-27 23:33:19,541 INFO src.models.bpr: BPR epoch 18/20, avg loss: 0.276491
+2026-02-27 23:33:53,809 INFO src.models.bpr: BPR epoch 20/20, avg loss: 0.267014
+2026-02-27 23:33:53,815 INFO src.models.hybrid_two_stage: Fitting content-based component...
+2026-02-27 23:34:03,497 INFO src.models.hybrid_two_stage: Training hybrid reranker...
+2026-02-27 23:34:25,253 INFO src.models.hybrid_two_stage: Reranker trained: n_users=5436 n_samples=1327761 n_features=16 positive_rate=0.0209
+2026-02-27 23:34:25,253 INFO src.models.hybrid_two_stage: Reranker feature importances: {'cf_score_norm': np.int32(674), 'cf_rank_inv': np.int32(717), 'cf_rank_frac': np.int32(293), 'bpr_item_bias': np.int32(987), 'cb_score_norm': np.int32(586), 'cb_rank_inv': np.int32(352), 'cb_rank_frac': np.int32(184), 'in_cf': np.int32(1), 'in_cb': np.int32(1), 'cf_cb_interaction': np.int32(605), 'movie_mean_rating': np.int32(1000), 'log_movie_rating_count': np.int32(761), 'user_mean_rating': np.int32(1072), 'user_rating_count': np.int32(982), 'user_liked_count': np.int32(785), 'is_cold_user': np.int32(0)}
+/Users/anastasiiamazur/Projects/ucu-rs-2026/.venv/lib/python3.12/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMRanker was fitted with feature names
+  warnings.warn(
+2026-02-27 23:34:53,947 WARNING src.eval.offline_ranking: Skipped 41/6040 users with no relevant items in test set (threshold=4.00)
+2026-02-27 23:34:53,977 INFO __main__: === Offline Evaluation ===
+2026-02-27 23:34:53,978 INFO __main__: Split type: per_user
+2026-02-27 23:34:53,978 INFO __main__: Split: val
+2026-02-27 23:34:53,978 INFO __main__: Mode: all
+2026-02-27 23:34:53,978 INFO __main__: Users total=6040, with_gt=6040, eligible=5999, evaluated=5999, skipped=41
+2026-02-27 23:34:53,978 INFO __main__: Coverage rate=1.00000, avg list size=20.00, skip rate=0.00679
+2026-02-27 23:34:53,978 INFO __main__: k=10: ndcg=0.12698 precision=0.10900 recall=0.05034 mrr=0.23632 map=0.05730
+2026-02-27 23:34:53,978 INFO __main__: k=20: ndcg=0.13067 precision=0.09964 recall=0.06803 mrr=0.24620 map=0.04848
+",40% LambdaMART + 60% BPR CF — extends blend sweep
