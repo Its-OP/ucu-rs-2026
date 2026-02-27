@@ -1,5 +1,10 @@
 # Content-Based Filtering: Results and Analysis
 
+Important directories:
+1. Implementation: `src/models/content_based.py` as `ContentBasedRecommender`
+2. Launch script: `src/run_content_based.py` for full CLI
+3. Experiment setup&results: this report (`reports/models/content_based.md`) and generated run outputs under `runs/`
+
 ## 1. Item Representation
 
 Each movie is represented as a **400-dimensional dense embedding** produced via the

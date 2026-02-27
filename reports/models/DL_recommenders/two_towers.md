@@ -1,5 +1,10 @@
 # Two-Tower Transformer Recommender
 
+Important directories:
+1. Implementation: `src/models/ANN/two_towers/` (`two_tower_transformer.py`, `user_tower.py`, `item_tower.py`)
+2. Launch script: `src/train_two_tower_transformer.py` for training/evaluation
+3. Experiment setup&results: `runs/two_tower_transformer_*` reports and this document (`reports/models/DL_recommenders/two_towers.md`)
+
 ## Model Choice Justification
 
 The two-tower architecture decouples user and item representations into independent encoders sharing a 128-dimensional L2-normalised scoring space, enabling sub-millisecond inference (0.49 ms/user) via FAISS, with item embeddings pre-computed once and indexed offline.

@@ -1,7 +1,5 @@
 # Wide & Deep Recommender
 
-This document describes our Wide & Deep implementation for top-K recommendation on MovieLens.
-
 Important directories:
 1. Implementation: `src/models/wide_deep.py` as `WideAndDeepRecommender`
 2. Launch script: `src/run_wide_deep.py` for CLI training/evaluation
@@ -129,3 +127,61 @@ This implementation is designed to align with the project’s standard offline p
 - evaluation at `K in {10, 20}` by default
 
 Notebook additionally supports per-user temporal split experiments for Two-Tower comparability.
+
+## 8. Required Discussion
+
+### 8.1 Representational Differences vs MF/BPR
+
+- **MF/BPR core representation**
+  - Primarily user-item latent interactions (`p_u^T q_i`) plus simple biases.
+  - BPR changes the objective to pairwise ranking but keeps similar latent-factor interaction form.
+  - Side information is not naturally first-class in vanilla MF/BPR.
+
+- **Wide & Deep representation**
+  - **Wide branch** memorizes frequent linear patterns (user/item/demographic biases + genre linear term).
+  - **Deep branch** learns nonlinear feature interactions from user/item embeddings plus side features.
+  - Metadata (demographics, genres) is directly included in scoring, not just added as post-hoc heuristics.
+
+- **Implication**
+  - Wide & Deep can exploit structured metadata when collaborative signals are sparse.
+  - MF/BPR can be more compact and robust for pure collaborative structure, but may underuse available side features.
+
+### 8.2 Optimization and Compute Trade-offs
+
+- **Optimization**
+  - Wide & Deep uses sampled BCE on implicit positives vs sampled negatives.
+  - This is easy to optimize with AdamW, but sensitive to negative-sampling quality and class balance.
+  - Stability safeguards (finite checks, gradient clipping) are important; without them, training can diverge.
+
+- **Training cost**
+  - Wide & Deep has higher parameter count than compact MF/BPR due to:
+    - multiple embedding tables,
+    - side-feature projections,
+    - MLP layers.
+  - Validation-based best-epoch selection and early stopping improve reliability at some extra compute overhead.
+
+- **Inference cost**
+  - Current implementation scores full candidate catalog per user in batches.
+  - Exact and simple at MovieLens scale, but less scalable than ANN retrieval for very large item catalogs.
+
+- **Sampling trade-off**
+  - Uniform negatives are simple and stable.
+  - Harder/popularity negatives may improve ranking discrimination, but usually increase variance and tuning complexity.
+
+### 8.3 Why Performance Improves or Degrades
+
+- **Why it improves**
+  - Side features provide extra predictive signal beyond user-item ID interaction.
+  - Wide path captures memorization patterns; deep path generalizes to sparse or unseen feature combinations.
+  - Best-epoch restoration avoids late-epoch degradation.
+
+- **Why it degrades**
+  - BCE with sampled negatives is a surrogate; it does not directly optimize global top-K ranking.
+  - Easy/biased negative samples can limit ranking gains.
+  - Higher-capacity configurations can overfit frequent patterns if regularization/tuning is insufficient.
+  - Metric shifts can be driven by split protocol, not only by model quality.
+
+- **Observed split effect in this project**
+  - Global temporal split has much higher skip rate than per-user split, so effective evaluated user populations differ.
+  - Seen-item masking interacts with split geometry and changes candidate difficulty.
+  - Therefore, metric deltas between protocols should be interpreted as a combination of model behavior and evaluation-population differences.

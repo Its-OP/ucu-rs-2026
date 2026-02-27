@@ -1,5 +1,10 @@
 # Multi-Armed Bandits for Model Selection
 
+Important directories:
+1. Implementation: `src/models/bandit/` (`strategy.py`, `simulation.py`, `bandit_model_selector.py`)
+2. Launch script: `src/run_bandit.py` for full CLI simulation
+3. Experiment setup&results: `runs/bandit_*` reports and this document (`reports/models/bandits.md`)
+
 ## Why Offline Metrics Are Insufficient
 
 BPR and ItemGraph score nearly identical NDCG@10 (0.296 vs 0.288) on the held-out validation set. A single aggregate number hides _who_ each model serves well. If ItemGraph outperforms BPR for a portion of users but underperforms for the rest, the averages look similar while both models leave value on the table. Offline evaluation tells us which model is better _on average_ — bandits tell us which model is better _per user_.

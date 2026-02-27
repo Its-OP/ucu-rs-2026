@@ -199,3 +199,73 @@ These breakdowns are not separate metrics — they are the same NDCG@K / Precisi
 | **Secondary metrics** | Precision@10, Recall@10 | List purity and preference coverage |
 | **Diagnostic slices** | User activity, item popularity, cold-start | Exposes pathology-specific failure modes |
 | **Candidate set** | All unobserved + test items per user | Full-catalog ranking, not sampled negatives |
+
+---
+
+## 9. Evaluator Evolution: `eval.py` vs `offline_ranking.py`
+
+We currently maintain two evaluator entry points:
+- `src/eval/eval.py` (legacy/basic)
+- `src/eval/offline_ranking.py` (extended, default for experiments in the second part)
+
+The second was introduced to address practical reporting gaps encountered during model comparison.
+
+### 9.1 What changed
+
+1. **Single-K to Multi-K evaluation**
+- `eval.py`: evaluates exactly one cutoff `k`.
+- `offline_ranking.py`: accepts `ks` and reports metrics for each K in one pass.
+  
+**Why:** experiments consistently need `K in {10, 20}` sensitivity, and running separate passes is slower and less reproducible.
+
+2. **Metric set expansion**
+- `eval.py`: `NDCG`, `Precision`, `Recall`.
+- `offline_ranking.py`: adds `MRR` and `MAP` (while retaining NDCG/Precision/Recall).
+  
+**Why:** NDCG alone can hide first-hit quality and average precision behavior; MRR/MAP improve top-rank diagnostics.
+
+3. **Return type: scalar metrics to structured report**
+- `eval.py`: returns a simple `Metrics` dataclass (3 scalars).
+- `offline_ranking.py`: returns `EvalReport` with per-K metrics plus diagnostics.
+  
+**Why:** downstream notebooks/reports need both performance and reliability context (eligibility, skipping, coverage).
+
+4. **User-accounting diagnostics**
+- `eval.py`: only logs skipped users.
+- `offline_ranking.py`: reports:
+  - `n_users_total`, `n_users_with_gt`, `n_users_eligible`, `n_users_evaluated`,
+  - `n_predicted`, `n_skipped`, `skip_rate`.
+    
+**Why:** aggregate metric interpretation depends heavily on how many users are actually evaluated.
+
+5. **Coverage diagnostics**
+- `offline_ranking.py` adds:
+  - `coverage_rate` (fraction of users receiving at least `min(ks)` recs),
+  - `avg_list_size`.
+    
+**Why:** some models silently return short lists; metrics must be interpreted with list-coverage context.
+
+6. **Evaluation mode support (`all` vs `warm_only`)**
+- `eval.py`: always evaluates all users passed to `predict`.
+- `offline_ranking.py`: supports:
+  - `mode="all"`,
+  - `mode="warm_only"` (users with at least one relevant train interaction).
+    
+**Why:** separates true model quality from unavoidable cold-start ceiling in collaborative models.
+
+7. **Warm/cold population statistics**
+- `offline_ranking.py` reports:
+  - `n_warm_users`, `n_cold_users`, `cold_user_rate`.
+    
+**Why:** keeps split pathology visible in every evaluation artifact.
+
+8. **Column-name configurability**
+- `offline_ranking.py` exposes `user_col`, `item_col`, `rating_col`.
+  
+**Why:** allows reuse across datasets/tables with slightly different schemas.
+
+### 9.2 What stayed the same
+
+- Core protocol remains offline per-user ranking on held-out interactions.
+- Relevance thresholding (`rating >= threshold`) is unchanged.
+- Models still provide `predict(users, ratings, movies, k)` under the shared interface.

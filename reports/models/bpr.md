@@ -121,3 +121,40 @@ Key parameters exposed via `src/run_bpr.py` and `BPRRecommender`:
 - `negative_pool`: `unseen` or `non_positive`
 - `popularity_alpha`: exponent \(\alpha\) for popularity-based sampling
 - `random_state`: RNG seed
+
+## 9. Required Analysis
+
+### 9.1 Convergence behavior
+
+From `experiments/BPR/bpr_convergence.png`, all tested BPR variants show stable optimization:
+- loss decreases quickly in early epochs,
+- then plateaus gradually (diminishing returns after ~5-10 epochs),
+- no oscillatory instability was observed in the selected settings.
+
+Observed pattern:
+- variants with `negative_pool="unseen"` tend to converge to lower final loss than `negative_pool="non_positive"`,
+because non-positive negatives are generally harder and less separable.
+
+### 9.2 Sensitivity to sampling
+
+BPR performance is sensitive to how negatives are sampled.
+
+From validation results:
+- **Uniform sampling** generally outperformed popularity-biased sampling on NDCG@10.
+- The **sampling distribution** effect was larger than the `unseen` vs `non_positive` pool effect in this setup.
+- Best validation NDCG@10 was achieved by `bpr_u_uniform` (uniform + unseen).
+
+Interpretation:
+- popularity-biased negatives can be harder but may over-focus training on popular-item discrimination,
+which is not always optimal for overall top-K ranking quality.
+
+### 9.3 Impact on head vs tail items
+
+Using train-popularity head/tail split (top 20% items = head):
+- BPR is strong on **head** items (higher NDCG/Recall),
+- performance on **tail** items is near zero for all tested methods, including BPR.
+
+This indicates that:
+- the long-tail regime remains very challenging under sparse collaborative signal,
+- BPR improves ranking mostly where interaction density is sufficient (head),
+- additional side-information or hybrid modeling is likely required for stronger tail retrieval.
