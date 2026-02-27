@@ -43,6 +43,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--genre-embedding-dim", type=int, default=16)
     parser.add_argument("--max-positive-samples-per-epoch", type=int, default=0)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
+    parser.add_argument("--monitor-k", type=int, default=10)
+    parser.add_argument("--early-stopping-patience", type=int, default=0)
+    parser.add_argument("--save-best-model", action="store_true")
+    parser.add_argument("--best-model-path", type=str, default="runs/wide_deep_best.pt")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--device",
@@ -83,9 +87,22 @@ def main() -> None:
     )
 
     eval_ratings = val if args.split == "val" else test
+    ks = tuple(sorted(set(int(v.strip()) for v in args.ks.split(",") if v.strip())))
 
     logger.info("Fitting Wide&Deep on global train split...")
-    model.fit(train, users=users, movies=movies)
+    model.fit(
+        train,
+        users=users,
+        movies=movies,
+        val_ratings=val,
+        eval_ks=ks,
+        monitor_k=args.monitor_k,
+        eval_mode=args.mode,
+        save_best_model=args.save_best_model,
+        best_model_path=args.best_model_path,
+        restore_best_weights=True,
+        early_stopping_patience=args.early_stopping_patience,
+    )
 
     if args.evaluator == "basic":
         metrics = evaluate_basic(
@@ -104,14 +121,13 @@ def main() -> None:
         logger.info("Recall@%d: %.5f", args.k, metrics.recall)
         return
 
-    ks = [int(v.strip()) for v in args.ks.split(",") if v.strip()]
     report = evaluate_offline(
         model=model,
         train_ratings=train,
         test_ratings=eval_ratings,
         users=users,
         movies=movies,
-        ks=ks,
+        ks=list(ks),
         threshold=args.threshold,
         mode=args.mode,
     )

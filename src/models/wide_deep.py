@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import copy
 import logging
+import time
+from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
 
 from src.models.base import Rating, RecommenderModel
 
@@ -171,6 +173,10 @@ class WideAndDeepRecommender(RecommenderModel):
 
         self._global_popularity_scores: np.ndarray = np.array([], dtype=np.float64)
         self.loss_history_: List[float] = []
+        self.val_history_: List[dict] = []
+        self.best_epoch_: int = -1
+        self.best_val_ndcg_: float = float("-inf")
+        self.total_training_time_seconds_: float = 0.0
 
         self.model: _WideAndDeepNet | None = None
 
@@ -351,6 +357,14 @@ class WideAndDeepRecommender(RecommenderModel):
         ratings: pd.DataFrame,
         users: pd.DataFrame | None = None,
         movies: pd.DataFrame | None = None,
+        val_ratings: pd.DataFrame | None = None,
+        eval_ks: tuple[int, ...] = (10, 20),
+        monitor_k: int = 10,
+        eval_mode: str = "all",
+        save_best_model: bool = False,
+        best_model_path: str | None = None,
+        restore_best_weights: bool = True,
+        early_stopping_patience: int = 0,
     ) -> "WideAndDeepRecommender":
         if users is None or users.empty:
             raise ValueError("users dataframe is required for WideAndDeepRecommender")
@@ -392,6 +406,12 @@ class WideAndDeepRecommender(RecommenderModel):
 
         rng = np.random.default_rng(self.random_state)
         self.loss_history_.clear()
+        self.val_history_.clear()
+        self.best_epoch_ = -1
+        self.best_val_ndcg_ = float("-inf")
+        best_state_dict = None
+        epochs_without_improvement = 0
+        training_start = time.perf_counter()
 
         logger.info(
             "WideAndDeep training started: epochs=%d, positives=%d, device=%s",
@@ -480,7 +500,142 @@ class WideAndDeepRecommender(RecommenderModel):
                 avg_loss,
             )
 
+            if val_ratings is not None:
+                from src.eval.offline_ranking import evaluate as evaluate_offline
+
+                report = evaluate_offline(
+                    model=self,
+                    train_ratings=ratings,
+                    test_ratings=val_ratings,
+                    users=users,
+                    movies=movies,
+                    ks=eval_ks,
+                    threshold=self.threshold,
+                    mode=eval_mode,
+                )
+                if monitor_k not in report.by_k:
+                    raise ValueError(f"monitor_k={monitor_k} missing in eval_ks={eval_ks}")
+
+                monitored_ndcg = float(report.by_k[monitor_k].ndcg)
+                self.val_history_.append(
+                    {"epoch": epoch + 1, "monitor_k": int(monitor_k), "ndcg": monitored_ndcg}
+                )
+                logger.info("  Val epoch %d - NDCG@%d: %.6f", epoch + 1, monitor_k, monitored_ndcg)
+
+                improved = monitored_ndcg > self.best_val_ndcg_
+                if improved:
+                    self.best_val_ndcg_ = monitored_ndcg
+                    self.best_epoch_ = epoch + 1
+                    best_state_dict = copy.deepcopy(self.model.state_dict())
+                    epochs_without_improvement = 0
+                    if save_best_model and best_model_path:
+                        self.save_checkpoint(best_model_path)
+                else:
+                    epochs_without_improvement += 1
+
+                if early_stopping_patience > 0 and epochs_without_improvement >= early_stopping_patience:
+                    logger.info(
+                        "Early stopping at epoch %d (patience=%d). Best epoch=%d, best NDCG@%d=%.6f",
+                        epoch + 1,
+                        early_stopping_patience,
+                        self.best_epoch_,
+                        monitor_k,
+                        self.best_val_ndcg_,
+                    )
+                    break
+
+        self.total_training_time_seconds_ = time.perf_counter() - training_start
+        logger.info("WideAndDeep training complete in %.2f seconds", self.total_training_time_seconds_)
+
+        if restore_best_weights and best_state_dict is not None:
+            self.model.load_state_dict(best_state_dict)
+            logger.info(
+                "Restored best weights from epoch %d (NDCG@%d=%.6f)",
+                self.best_epoch_,
+                monitor_k,
+                self.best_val_ndcg_,
+            )
+
         return self
+
+    def save_checkpoint(self, path: str) -> None:
+        if self.model is None:
+            raise RuntimeError("Model is not initialised; call fit() first.")
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "model_state_dict": self.model.state_dict(),
+                "model_config": {
+                    "n_users": len(self.user_to_idx),
+                    "n_items": len(self.item_to_idx),
+                    "n_genders": max(1, len(self.gender_to_idx)),
+                    "n_ages": max(1, len(self.age_to_idx)),
+                    "n_occupations": max(1, len(self.occupation_to_idx)),
+                    "n_genres": int(self.item_genre_matrix.shape[1]) if self.item_genre_matrix is not None else 1,
+                    "embedding_dim": self.embedding_dim,
+                    "hidden_dims": self.hidden_dims,
+                    "dropout": self.dropout,
+                    "genre_embedding_dim": self.genre_embedding_dim,
+                },
+                "mappings": {
+                    "user_to_idx": self.user_to_idx,
+                    "item_to_idx": self.item_to_idx,
+                    "idx_to_item": self.idx_to_item,
+                    "gender_to_idx": self.gender_to_idx,
+                    "age_to_idx": self.age_to_idx,
+                    "occupation_to_idx": self.occupation_to_idx,
+                },
+                "arrays": {
+                    "user_gender_idx": self.user_gender_idx,
+                    "user_age_idx": self.user_age_idx,
+                    "user_occupation_idx": self.user_occupation_idx,
+                    "item_genre_matrix": self.item_genre_matrix,
+                    "all_item_indices": self._all_item_indices,
+                    "global_popularity_scores": self._global_popularity_scores,
+                },
+                "stats": {
+                    "loss_history": self.loss_history_,
+                    "val_history": self.val_history_,
+                    "best_epoch": self.best_epoch_,
+                    "best_val_ndcg": self.best_val_ndcg_,
+                    "total_training_time_seconds": self.total_training_time_seconds_,
+                },
+            },
+            str(p),
+        )
+        logger.info("Saved WideAndDeep checkpoint to %s", p)
+
+    def load_checkpoint(self, path: str, map_location: str | torch.device | None = None) -> None:
+        ckpt = torch.load(path, map_location=map_location or self.device, weights_only=False)
+        cfg = ckpt["model_config"]
+        self.model = _WideAndDeepNet(**cfg).to(self.device)
+        self.model.load_state_dict(ckpt["model_state_dict"])
+        self.model.eval()
+
+        maps = ckpt["mappings"]
+        self.user_to_idx = maps["user_to_idx"]
+        self.item_to_idx = maps["item_to_idx"]
+        self.idx_to_item = maps["idx_to_item"]
+        self.gender_to_idx = maps["gender_to_idx"]
+        self.age_to_idx = maps["age_to_idx"]
+        self.occupation_to_idx = maps["occupation_to_idx"]
+
+        arr = ckpt["arrays"]
+        self.user_gender_idx = arr["user_gender_idx"]
+        self.user_age_idx = arr["user_age_idx"]
+        self.user_occupation_idx = arr["user_occupation_idx"]
+        self.item_genre_matrix = arr["item_genre_matrix"]
+        self._all_item_indices = arr["all_item_indices"]
+        self._global_popularity_scores = arr["global_popularity_scores"]
+
+        stats = ckpt.get("stats", {})
+        self.loss_history_ = list(stats.get("loss_history", []))
+        self.val_history_ = list(stats.get("val_history", []))
+        self.best_epoch_ = int(stats.get("best_epoch", -1))
+        self.best_val_ndcg_ = float(stats.get("best_val_ndcg", float("-inf")))
+        self.total_training_time_seconds_ = float(stats.get("total_training_time_seconds", 0.0))
+        logger.info("Loaded WideAndDeep checkpoint from %s", path)
 
     def _score_items_for_user(
         self,
