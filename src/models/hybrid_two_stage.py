@@ -120,6 +120,7 @@ class TwoStageHybridRecommender(RecommenderModel):
         ratings: pd.DataFrame,
         users: pd.DataFrame | None = None,
         movies: pd.DataFrame | None = None,
+        rerank_ratings: pd.DataFrame | None = None,
     ) -> "TwoStageHybridRecommender":
         if users is None:
             raise ValueError("users dataframe is required")
@@ -164,7 +165,8 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         if self.use_ranker:
             logger.info("Training hybrid reranker...")
-            self._train_reranker(users=users, ratings=ratings)
+            train_labels = rerank_ratings if rerank_ratings is not None else ratings
+            self._train_reranker(users=users, label_ratings=train_labels)
 
         return self
 
@@ -201,13 +203,17 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         return results
 
-    def _train_reranker(self, users: pd.DataFrame, ratings: pd.DataFrame) -> None:
+    def _train_reranker(
+        self,
+        users: pd.DataFrame,
+        label_ratings: pd.DataFrame,
+    ) -> None:
         rating_lookup = {
-            (int(uid), int(mid)): float(r)
+            (int(uid), int(mid)): float(r >= self.threshold)
             for uid, mid, r in zip(
-                ratings["UserID"].values,
-                ratings["MovieID"].values,
-                ratings["Rating"].values,
+                label_ratings["UserID"].values,
+                label_ratings["MovieID"].values,
+                label_ratings["Rating"].values,
             )
         }
 
@@ -220,7 +226,8 @@ class TwoStageHybridRecommender(RecommenderModel):
                 n_cf=self.train_cf_candidates,
                 n_cb=self.train_cb_candidates,
                 cb_search_size=self.train_cb_search_size,
-                filter_watched=False,
+                filter_watched=True,
+                seen_override=self.train_seen,
             )
             if not signals:
                 continue
@@ -231,7 +238,8 @@ class TwoStageHybridRecommender(RecommenderModel):
                 dtype=np.float32,
             )
 
-            if np.all(labels == 0.0):
+            # The reranker must see both classes for stable learning.
+            if np.all(labels == 0.0) or np.all(labels == 1.0):
                 continue
 
             all_x.append(features)
@@ -244,6 +252,7 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         x = np.vstack(all_x)
         y = np.concatenate(all_y)
+        pos_rate = float((y > 0.5).mean())
 
         self.ranker = GradientBoostingRegressor(
             n_estimators=150,
@@ -257,9 +266,10 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         importance = dict(zip(self._FEATURE_NAMES, self.ranker.feature_importances_))
         logger.info(
-            "Reranker trained: n_samples=%d n_features=%d",
+            "Reranker trained: n_samples=%d n_features=%d positive_rate=%.4f",
             x.shape[0],
             x.shape[1],
+            pos_rate,
         )
         logger.info("Reranker feature importances: %s", importance)
 
@@ -270,17 +280,20 @@ class TwoStageHybridRecommender(RecommenderModel):
         n_cb: int,
         cb_search_size: int,
         filter_watched: bool,
+        seen_override: dict[int, set[int]] | None = None,
     ) -> list[CandidateSignals]:
         cf_items = self._cf_candidates_for_user(
             user_id=user_id,
             k=n_cf,
             filter_watched=filter_watched,
+            seen_override=seen_override,
         )
         cb_items = self._cb_candidates_for_user(
             user_id=user_id,
             n_candidates=n_cb,
             search_size=cb_search_size,
             filter_watched=filter_watched,
+            seen_override=seen_override,
         )
 
         merged: dict[int, dict] = {}
@@ -335,6 +348,7 @@ class TwoStageHybridRecommender(RecommenderModel):
         user_id: int,
         k: int,
         filter_watched: bool,
+        seen_override: dict[int, set[int]] | None = None,
     ) -> list[tuple[int, float]]:
         if self.cf_model is None:
             return []
@@ -359,7 +373,8 @@ class TwoStageHybridRecommender(RecommenderModel):
 
         work_scores = scores.astype(np.float64, copy=True)
         if filter_watched:
-            watched = self.train_seen.get(user_id, set())
+            seen_map = seen_override if seen_override is not None else self.train_seen
+            watched = seen_map.get(user_id, set())
             if watched:
                 mask = np.isin(item_ids, np.fromiter(watched, dtype=item_ids.dtype))
                 work_scores[mask] = -np.inf
@@ -383,13 +398,15 @@ class TwoStageHybridRecommender(RecommenderModel):
         n_candidates: int,
         search_size: int,
         filter_watched: bool,
+        seen_override: dict[int, set[int]] | None = None,
     ) -> list[tuple[int, float]]:
         if self.cb_model is None:
             return []
         if user_id not in self.cb_model.user_profiles:
             return []
 
-        watched = self.train_seen.get(user_id, set())
+        seen_map = seen_override if seen_override is not None else self.train_seen
+        watched = seen_map.get(user_id, set())
         profile = self.cb_model.user_profiles[user_id]
         candidates = self.cb_model._retrieve_candidates(
             profile=profile,

@@ -17,6 +17,8 @@ from __future__ import annotations
 import argparse
 import logging
 
+import pandas as pd
+
 from data.dataframes import (
     movies_enriched,
     test,
@@ -98,21 +100,55 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-ranker", action="store_true")
 
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--rerank-holdout-frac",
+        type=float,
+        default=0.15,
+        help="Per-user tail fraction used as reranker labels for *val* experiments.",
+    )
     return parser.parse_args()
+
+
+def _per_user_tail_holdout(
+    ratings: pd.DataFrame,
+    frac: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split each user's timeline into base-train prefix and holdout tail."""
+    if not (0.0 < frac < 0.5):
+        raise ValueError("--rerank-holdout-frac must be in (0, 0.5)")
+
+    base_parts: list[pd.DataFrame] = []
+    holdout_parts: list[pd.DataFrame] = []
+    for _, group in ratings.groupby("UserID"):
+        group = group.sort_values("Timestamp")
+        n = len(group)
+        n_holdout = max(1, int(round(n * frac)))
+        if n - n_holdout < 1:
+            n_holdout = 1
+        cut = n - n_holdout
+        base_parts.append(group.iloc[:cut])
+        holdout_parts.append(group.iloc[cut:])
+
+    base_df = pd.concat(base_parts, ignore_index=True)
+    holdout_df = pd.concat(holdout_parts, ignore_index=True)
+    return base_df, holdout_df
 
 
 def _resolve_split(
     split_type: str,
     split: str,
-) -> tuple[object, object]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
     if split_type == "global":
-        train_ratings = train
-        eval_ratings = val if split == "val" else test
-        return train_ratings, eval_ratings
+        if split == "test":
+            # test protocol: fit base retrievers on train, train reranker on val labels
+            return train.copy(), test.copy(), val.copy()
+        # validation protocol: carve reranker labels from train to avoid leakage from val
+        return train.copy(), val.copy(), None
 
     if split == "test":
         raise ValueError("per_user split currently supports only --split val")
-    return user_based_temporal_train, user_based_temporal_val
+    # per-user validation protocol: hold out a tail from train for reranker labels
+    return user_based_temporal_train.copy(), user_based_temporal_val.copy(), None
 
 
 def main() -> None:
@@ -122,7 +158,18 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    train_ratings, eval_ratings = _resolve_split(args.split_type, args.split)
+    train_ratings, eval_ratings, rerank_ratings = _resolve_split(args.split_type, args.split)
+    if rerank_ratings is None and not args.disable_ranker:
+        train_ratings, rerank_ratings = _per_user_tail_holdout(
+            ratings=train_ratings,
+            frac=args.rerank_holdout_frac,
+        )
+        logger.info(
+            "Reranker holdout generated from training window: base_train=%d rerank_labels=%d",
+            len(train_ratings),
+            len(rerank_ratings),
+        )
+
     model = TwoStageHybridRecommender(
         threshold=args.threshold,
         cf_n_factors=args.cf_n_factors,
@@ -149,7 +196,12 @@ def main() -> None:
     )
 
     logger.info("Fitting TwoStageHybridRecommender...")
-    model.fit(ratings=train_ratings, users=users, movies=movies_enriched)
+    model.fit(
+        ratings=train_ratings,
+        users=users,
+        movies=movies_enriched,
+        rerank_ratings=rerank_ratings,
+    )
 
     if args.evaluator == "basic":
         metrics = evaluate_basic(
