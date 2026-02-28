@@ -1,6 +1,6 @@
-# Summary Report — HW#2 Recommender System
+# Summary Report - HW#2 Recommender System
 
-## What we actually built
+## Implemented components
 
 Seven components were added in the second part, layered on top of the first-part infrastructure:
 
@@ -38,9 +38,9 @@ Seven components were added in the second part, layered on top of the first-part
   the CTR proxy.
 
 
-## Critical caveats — they change every comparison
+## Critical caveats
 
-### Two evaluation protocols produce incomparable absolute numbers
+### Two evaluation protocols are not directly comparable
 
 | Protocol | Train/Val split | Evaluated users | Typical skip rate |
 |---|---|---|---|
@@ -64,9 +64,9 @@ Neither the A/B test nor the bandit was run in a real online environment. All re
 are offline NDCG@10 proxies; actual CTR behavior may differ.
 
 
-## 1) Performance comparison — only where fair
+## 1) Performance comparison
 
-### Global test (most defensible comparison — same split, held-out, final)
+### Global test (same split, held-out, final)
 
 | Model | NDCG@10 | MRR@10 | Recall@10 | MAP@10 |
 |---|---:|---:|---:|---:|
@@ -75,13 +75,13 @@ are offline NDCG@10 proxies; actual CTR behavior may differ.
 | `BPR` (uniform, unseen) | 0.2391 | 0.3845 | 0.0504 | 0.1364 |
 | **Hybrid LambdaMART blend=0.6** | **0.2476** | **0.3933** | 0.0552 | — |
 
-BPR edges item_graph on NDCG and Recall; item_graph leads on MAP (slightly better average
+BPR is ahead of item_graph on NDCG and Recall; item_graph leads on MAP (slightly better average
 precision at top-10). The hybrid with LambdaMART and CF blend is the clear winner:
 +3.6 % NDCG and +2.3 % MRR over BPR. Pure LambdaMART (blend=1.0) underperforms BPR due to
 training-pool covariate shift (200 vs 400 CF candidates at inference) and very low positive
 rate (~2 %), which starves LambdaGrad updates of signal.
 
-### Per-user validation (different task geometry — wider user coverage)
+### Per-user validation (different task geometry, wider user coverage)
 
 | Model | NDCG@10 | MRR@10 | Recall@10 |
 |---|---:|---:|---:|
@@ -97,7 +97,7 @@ to learn robust preferences. RRF, relying on BPR's rank and the CB cosine score,
 from the richer 90 % training signal and wins comfortably.
 
 
-## 2) Where each second-part component fails
+## 2) Failure modes by component
 
 ### Heuristics (count / recency / graph)
 Low complexity, zero training cost, strong non-parametric baseline. The main failure modes:
@@ -179,7 +179,7 @@ which together account for ~33 % of LambdaMART split importance alongside user-a
 (~37 %). CF personalisation features contribute only ~22 %.
 
 
-## 4) Evaluator evolution — eval.py → offline_ranking.py
+## 4) Evaluator evolution: eval.py -> offline_ranking.py
 
 `src/eval/eval.py` (part 1) evaluates one K cutoff and returns three scalar metrics (NDCG,
 Precision, Recall). `src/eval/offline_ranking.py` (part 2, now the default) extends it with:
@@ -200,9 +200,9 @@ means NDCG is averaged over only ~20 % of users, a much narrower (and higher-eng
 population than the per-user split's 0.7 % skip_rate.
 
 
-## 5) What should be deployed now
+## 5) Deployment recommendation
 
-### Recommended production candidate
+### Primary production candidate
 Deploy `TwoStageHybridRecommender` with LambdaMART and `ranker_cf_blend=0.6` — it is the
 strongest model on the held-out global test split (+3.6 % NDCG@10, +2.3 % MRR@10 over BPR).
 The content-based retrieval stage adds +16 % relative recall (0.050→0.058), which the CF blend
@@ -214,7 +214,7 @@ Keep BPR and item_graph as fallback / challenger arms:
 - **item_graph** as a robust non-parametric backup (MAP@10 > BPR; no training required).
 - **popularity count** as the last-resort cold-start fallback.
 
-### What not to deploy yet
+### Not ready for primary deployment
 Two-tower and Wide & Deep are not ready as primary models. Both overfit on this dataset size
 and neither beats the hybrid on a comparable held-out test. Their value will increase with
 more data or architectural regularisation (e.g., smaller capacity, stronger dropout,

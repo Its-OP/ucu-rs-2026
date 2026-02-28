@@ -1,33 +1,33 @@
-# Summary Report — HW#1 Recommender System
+# Summary Report - HW#1 Recommender System
 
-## What we actually built
+## Implemented models
 We implemented five model families: a simple popularity baseline, item‑item collaborative filtering
 (tested with cosine, adjusted cosine, and Pearson similarity), two matrix‑factorization approaches
 (FunkSVD and ALS), and a content‑based pipeline built on SBERT + PCA embeddings with FAISS
 retrieval and multiple scoring options, including an optional GBR re‑ranker.
 
-## First, an important caveat (this affects every comparison)
+## Evaluation caveat
 We used **two different temporal splits**:
 - **Global temporal split (75/12.5/12.5)** for ALS / FunkSVD / Item‑Item CF.
 - **Per‑user temporal split (75/25)** for content‑based.
 
-These are *not* the same problem:
+These are not the same setup:
 - The **global split** creates cold‑start users/items (some entities only appear in future windows).
 - The **per‑user split** guarantees every user has history, which makes the task easier and removes within‑user leakage.
 
-So **we should not compare raw metrics across models** until all models run on the same split and the same candidate set.
+Do not compare raw metrics across models until all models run on the same split and candidate set.
 
 
-## 1) Performance comparison (reasoned, not raw ranking)
+## 1) Performance comparison
 Given the split mismatch, the best we can do is compare **expected behavior** on a unified split:
 
-If everything were re‑evaluated on one consistent split, we would expect the following pattern:
+If all models were re-evaluated on one consistent split, the expected pattern is:
 matrix factorization (FunkSVD/ALS) usually leads on warm users, item‑item CF is a strong and
 interpretable baseline but degrades for sparse users and tail items, content‑based (especially
 with the GBR re‑ranker) is the safest option for cold‑start users/items, and the popularity baseline
 remains stable but non‑personalized, useful mainly as a fallback.
 
-**Simple takeaway:** MF for warm users, content‑based for cold‑start, CF as a solid baseline.
+Takeaway: MF for warm users, content-based for cold-start, and CF as a strong baseline.
 
 
 ## 2) Where each model fails
@@ -54,7 +54,7 @@ when users have too few liked items to build a profile, and it can over‑recomm
 items that do not match preference.
 
 
-## 3) Bias analysis (what we should watch for)
+## 3) Bias analysis
 
 ### Popularity bias
 All collaborative methods naturally prefer head items because those items dominate signal.
@@ -69,13 +69,13 @@ Global temporal splits produce real cold‑start cases. Collaborative models fai
 paired with content‑based or a popularity fallback.
 
 
-## 4) What would we deploy (and why)
+## 4) Deployment recommendation
 
 ### Recommended: a **hybrid pipeline**
 Use MF (ALS or FunkSVD) for warm users/items, fall back to content‑based for cold‑start, and
 keep a popularity baseline as a safety net for extreme sparsity.
 
-It gives the best quality where data exists, and still produces reasonable recommendations when it doesn’t.
+This gives the best quality where data exists and still produces reasonable recommendations under sparsity.
 
 ### If we must pick one model
 Given the current results on the same split (global temporal) FunkSVD clearly outperforms ALS,
