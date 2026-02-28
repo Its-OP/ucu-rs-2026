@@ -143,7 +143,41 @@ Each enhancement addresses a specific weakness:
 The final model (NDCG@10 = 0.128) represents a **2.8x improvement** over the popularity
 baseline and a **2.6x improvement** over the pure similarity baseline.
 
-## 5. Commands to Reproduce
+## 5. Default Baseline Comparison (BPR vs Hybrid-CB)
+
+To position the content-based hybrid against the strongest collaborative baseline, we
+compare:
+
+- **Default BPR**: 64 factors, 20 epochs, uniform negative sampling, `global/test`.
+- **Hybrid-CB (full content pipeline)**: FAISS + recency + neighbor enrichment + GBR
+  re-ranker, reported on `per-user/val`.
+
+### Default BPR (`global/test`)
+
+| NDCG@10 | Precision@10 | Recall@10 | MRR@10 | MAP@10 |
+|---|---|---|---|---|
+| 0.23908 | 0.21151 | 0.05043 | 0.38454 | 0.13644 |
+
+### Hybrid-CB (`per-user/val`)
+
+| NDCG@10 | Precision@10 | Recall@10 | MRR@10 | MAP@10 |
+|---|---|---|---|---|
+| 0.12822 | 0.10966 | 0.05185 | - | - |
+
+### Interpretation
+
+- On the reported runs, **BPR is much stronger on ranking quality** (NDCG/Precision/MRR/MAP),
+  while Hybrid-CB has **comparable Recall@10**.
+- This pattern is expected: BPR learns strong collaborative ranking signal for warm users,
+  while content-based systems are generally more robust for sparse-profile users and
+  metadata-driven retrieval.
+- **Important:** these two rows are **not directly comparable** because they come from
+  different split protocols (`global/test` vs `per-user/val`). Per-user validation is
+  usually easier and has a different evaluated user distribution.
+- For a fair head-to-head conclusion, both models must be re-evaluated on the **same**
+  split and evaluator settings.
+
+## 6. Commands to Reproduce
 
 ```bash
 # Popularity baseline
