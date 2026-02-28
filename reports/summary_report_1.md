@@ -83,7 +83,7 @@ so FunkSVD is the better MF choice today. If the environment is heavily cold‑s
 is safer.
 
 
-## 5) Next steps
+## 5) Possible next steps
 
 ### A) Model improvements
 Add a re‑ranker (GBR or a lightweight learning‑to‑rank layer), then scale to a bigger
